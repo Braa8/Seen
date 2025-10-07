@@ -34,9 +34,3 @@ A fully featured Arabic blogging platform built with **Next.js 15** that empower
 
 ---
 
-## 🚀 Getting Started
-
-### 1. Clone the repository
-```bash
-git clone [https://github.com/Braa8/Seen.git](https://github.com/Braa8/Seen.git)
-cd Seen
