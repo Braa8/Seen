@@ -17,7 +17,7 @@ const adapter = FirestoreAdapter({
   }),
 });
 
-export const authOptions: NextAuthOptions = {
+const authOptions: NextAuthOptions = {
   providers: [
     CredentialsProvider({
       name: "Credentials",
@@ -118,5 +118,6 @@ export const authOptions: NextAuthOptions = {
   },
 };
 
-export const GET = NextAuth(authOptions);
-export const POST = NextAuth(authOptions);
+const handler = NextAuth(authOptions);
+
+export { handler as GET, handler as POST };

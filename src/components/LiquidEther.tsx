@@ -190,7 +190,7 @@ export default function LiquidEther({
       private _winMouseMove = (e: MouseEvent) => this._onMouseMove(e);
       private _winTouchStart = (e: Event) => this._onTouchStart(e as TouchEvent);
       private _winTouchMove = (e: Event) => this._onTouchMove(e as TouchEvent);
-      private _winTouchEnd = (_e: Event) => this._onTouchEnd();
+      private _winTouchEnd = () => this._onTouchEnd();
       init(container: HTMLElement) {
         this.container = container;
         container.addEventListener('mousemove', this._onMouseMove);
