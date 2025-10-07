@@ -28,7 +28,7 @@ export async function POST(request: Request) {
     ensureAdminApp();
     const auth = getAuth();
 
-    const appUrl = process.env.NEXT_PUBLIC_APP_URL || process.env.NEXTAUTH_URL || "http://localhost:3000";
+    const appUrl = process.env.NEXT_PUBLIC_APP_URL || process.env.NEXTAUTH_URL || "https://seen-newspaper.vercel.app/";
     const actionUrl = redirectUrl || `${appUrl}/login?verified=1`;
     const link = await auth.generateEmailVerificationLink(email, {
       url: actionUrl,
