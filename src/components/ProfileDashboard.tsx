@@ -26,10 +26,6 @@ export default function ProfileDashboard() {
     return () => clearTimeout(timer);
   }, []);
 
-  if (pageLoading) {
-    return <LoadingPage />;
-  }
-
   const postsQuery = useMemo(() => {
     if (!session?.user?.id) return null;
     // نعرض جميع المنشورات (المسودات والمنشورة)
@@ -68,6 +64,10 @@ export default function ProfileDashboard() {
       try { unsub(); } catch {}
     };
   }, [postsQuery]);
+
+  if (pageLoading) {
+    return <LoadingPage />;
+  }
 
   const onSelectFile = async (file?: File) => {
     if (!file || !session?.user?.id) return;

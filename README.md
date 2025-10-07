@@ -1,36 +1,52 @@
-This is a [Next.js](https://nextjs.org) project bootstrapped with [`create-next-app`](https://nextjs.org/docs/app/api-reference/cli/create-next-app).
+# 📰 Seen (سين)
 
-## Getting Started
+**Seen** is a modern and dynamic online newspaper platform built with **Next.js** and **Firebase**.  
+It provides a seamless reading, writing, and administration experience with real-time updates, secure authentication, and immersive 3D visuals powered by **Three.js** and **React Three Fiber**.
 
-First, run the development server:
+---
 
-```bash
-npm run dev
-# or
-yarn dev
-# or
-pnpm dev
-# or
-bun dev
-```
+## 🚀 Features
 
-Open [http://localhost:3000](http://localhost:3000) with your browser to see the result.
+- 🧩 **Multi-Role System** — Supports four user roles:
+  - **Viewer** – can read articles.
+  - **Writer** – can create and edit their own posts.
+  - **Editor** – can review, modify, and publish posts written by others.
+  - **Admin** – full access to manage users, roles, and system settings.
 
-You can start editing the page by modifying `app/page.tsx`. The page auto-updates as you edit the file.
+- 🔐 **Secure Authentication**
+  - Built with **NextAuth.js** and **Firebase Authentication**.
+  - Email & password sign-in.
+  - Encrypted user data and Firestore-based role management.
 
-This project uses [`next/font`](https://nextjs.org/docs/app/building-your-application/optimizing/fonts) to automatically optimize and load [Geist](https://vercel.com/font), a new font family for Vercel.
+- 🗞️ **Content Management**
+  - Articles stored in **Firestore** for real-time updates.
+  - **Tiptap** rich-text editor with image and placeholder support.
+  - Role-based permissions for publishing and editing.
 
-## Learn More
+- 🎨 **Immersive Design**
+  - Elegant, responsive UI crafted with **React components**.
+  - 3D interactive elements using **React Three Fiber**.
+  - Integrated **Lottie JSON animations** for smooth motion effects.
+  - Custom reusable UI pieces imported from **React Bits**.
 
-To learn more about Next.js, take a look at the following resources:
+- ⚙️ **Scalable Architecture**
+  - Modular folder structure following Next.js 14+ app router conventions.
+  - Server-side route protection for admin/editor pages.
+  - Clean integration between frontend and Firebase backend.
 
-- [Next.js Documentation](https://nextjs.org/docs) - learn about Next.js features and API.
-- [Learn Next.js](https://nextjs.org/learn) - an interactive Next.js tutorial.
+---
 
-You can check out [the Next.js GitHub repository](https://github.com/vercel/next.js) - your feedback and contributions are welcome!
+## 🧠 Tech Stack
 
-## Deploy on Vercel
+| Category | Technology |
+|-----------|-------------|
+| **Framework** | Next.js (App Router, JavaScript) |
+| **Database** | Firebase Firestore |
+| **Auth System** | NextAuth.js + Firebase |
+| **3D Engine** | Three.js + React Three Fiber |
+| **Animations** | Lottie JSON |
+| **UI Components** | React Bits + Custom Components |
+| **Rich Text Editor** | Tiptap |
 
-The easiest way to deploy your Next.js app is to use the [Vercel Platform](https://vercel.com/new?utm_medium=default-template&filter=next.js&utm_source=create-next-app&utm_campaign=create-next-app-readme) from the creators of Next.js.
+---
 
-Check out our [Next.js deployment documentation](https://nextjs.org/docs/app/building-your-application/deploying) for more details.
