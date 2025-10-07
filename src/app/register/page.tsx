@@ -2,7 +2,12 @@
 
 import { useState, useRef } from "react";
 import app, { db } from "../../lib/firebase";
-import { getAuth, createUserWithEmailAndPassword, fetchSignInMethodsForEmail } from "firebase/auth";
+import {
+  getAuth,
+  createUserWithEmailAndPassword,
+  fetchSignInMethodsForEmail,
+  sendEmailVerification,
+} from "firebase/auth";
 import { doc, setDoc } from "firebase/firestore";
 import { motion, useMotionValue, useSpring } from "motion/react";
 import Link from "next/link";
@@ -11,38 +16,55 @@ export default function RegisterPage() {
   const [email, setEmail] = useState<string>("");
   const [password, setPassword] = useState<string>("");
   const [message, setMessage] = useState<string>("");
+  const [isSubmitting, setIsSubmitting] = useState<boolean>(false);
   const auth = getAuth(app);
 
   const handleRegister = async (e: React.FormEvent<HTMLFormElement>) => {
     e.preventDefault();
+    if (isSubmitting) return;
+    const trimmedEmail = email.trim();
+
+    if (!trimmedEmail) {
+      setMessage("الرجاء إدخال بريد إلكتروني صالح.");
+      return;
+    }
+
+    setIsSubmitting(true);
+    setMessage("");
+
     try {
       // تحقق مسبقًا إن كان البريد مستخدمًا بالفعل
-      const methods = await fetchSignInMethodsForEmail(auth, email);
+      const methods = await fetchSignInMethodsForEmail(auth, trimmedEmail);
       if (methods && methods.length > 0) {
         setMessage("هذا البريد مسجّل مسبقًا. يرجى تسجيل الدخول.");
+        setIsSubmitting(false);
         return;
       }
 
-      const userCredential = await createUserWithEmailAndPassword(auth, email, password);
+      const userCredential = await createUserWithEmailAndPassword(auth, trimmedEmail, password);
 
       // إنشاء مستند للمستخدم في Firestore لتخزين الأدوار
       if (userCredential.user?.uid) {
         const userDocRef = doc(db, "users", userCredential.user.uid);
-        await setDoc(userDocRef, {
-          email: userCredential.user.email,
-          roles: ["viewer"],
-        }, { merge: true });
+        await setDoc(
+          userDocRef,
+          {
+            email: userCredential.user.email,
+            roles: ["viewer"],
+          },
+          { merge: true }
+        );
       }
 
-      // أرسل بريد التحقق عبر مسارنا المخصص كي نستطيع التحكم في القالب والمرسل
-      try {
-        await fetch("/api/verify/send", {
-          method: "POST",
-          headers: { "Content-Type": "application/json" },
-          body: JSON.stringify({ email }),
-        });
-      } catch {}
-      setMessage("تم إرسال رسالة تأكيد إلى بريدك الإلكتروني .. يُرجى تأكيد البريد قبل تسجيل الدخول");
+      if (userCredential.user) {
+        try {
+          await sendEmailVerification(userCredential.user);
+          setMessage("تم ارسال الرابط عبر البريد لتأكيد الحساب .. تحقق من بريدك (بما في ذلك مجلد الرسائل غير المرغوب فيها).");
+        } catch (verificationError) {
+          console.error("فشل إرسال رسالة التفعيل من Firebase:", verificationError);
+          setMessage("تم إنشاء الحساب بنجاح، لكن تعذر إرسال رسالة التفعيل. يمكنك المحاولة لاحقًا من صفحة الإعدادات.");
+        }
+      }
     } catch (error) {
       const err = error as { code?: string; message?: string };
       if (err.code === "auth/email-already-in-use") {
@@ -54,6 +76,8 @@ export default function RegisterPage() {
       } else {
         setMessage(`حدث خطأ: ${err.message || "حدث خطأ غير معروف"}`);
       }
+    } finally {
+      setIsSubmitting(false);
     }
   };
 
@@ -119,11 +143,14 @@ export default function RegisterPage() {
             />
             <p className="text-xs text-gray-500 mt-1">يجب أن تكون 6 أحرف على الأقل</p>
           </div>
-          <button 
-            type="submit" 
-            className="w-full bg-green-600 text-white p-3 rounded-lg font-semibold hover:bg-green-700 transition hover:cursor-pointer"
+          <button
+            type="submit"
+            disabled={isSubmitting}
+            className={`w-full bg-green-600 text-white p-3 rounded-lg font-semibold transition ${
+              isSubmitting ? "opacity-70 cursor-not-allowed" : "hover:bg-green-700 hover:cursor-pointer"
+            }`}
           >
-            إنشاء حساب
+            {isSubmitting ? "جاري إنشاء الحساب..." : "إنشاء حساب"}
           </button>
         </form>
 
