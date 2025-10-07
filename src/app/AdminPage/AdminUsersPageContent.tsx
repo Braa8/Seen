@@ -2,19 +2,26 @@
 
 import { useEffect, useState } from "react";
 import { useSession } from "next-auth/react";
-import { getDocs, collection, updateDoc, doc } from "firebase/firestore";
-import { db } from "../../lib/firebase";
 import LoadingPage from "../../components/LoadingPage";
 import Link from "next/link";
 import { FaUsers, FaUserShield, FaEdit, FaEye, FaCrown, FaArrowLeft, FaCheck, FaTimes } from "react-icons/fa";
+import type { IconType } from "react-icons";
 
 type UserType = {
   id: string;
   email: string;
   roles: string[];
+  name?: string | null;
 };
 
-const availableRoles = [
+type RoleDescriptor = {
+  key: string;
+  label: string;
+  icon: IconType;
+  color: string;
+};
+
+const availableRoles: RoleDescriptor[] = [
   { key: "viewer", label: "زائر", icon: FaEye, color: "bg-gray-500" },
   { key: "writer", label: "كاتب", icon: FaEdit, color: "bg-blue-500" },
   { key: "editor", label: "محرر", icon: FaUserShield, color: "bg-green-500" },
@@ -25,6 +32,12 @@ export default function AdminUsersPageContent() {
   const { data: session } = useSession();
   const [users, setUsers] = useState<UserType[]>([]);
   const [loading, setLoading] = useState(true);
+  const [error, setError] = useState<string | null>(null);
+  const [pendingUserId, setPendingUserId] = useState<string | null>(null);
+
+  const getRoleInfo = (roleKey: string) => {
+    return availableRoles.find((role) => role.key === roleKey) || availableRoles[0];
+  };
 
   useEffect(() => {
     if (!session || !session.user.roles?.includes("admin")) {
@@ -34,19 +47,18 @@ export default function AdminUsersPageContent() {
 
     const fetchUsers = async () => {
       try {
-        const querySnapshot = await getDocs(collection(db, "users"));
-        const usersData: UserType[] = [];
-        querySnapshot.forEach((docSnap) => {
-          const data = docSnap.data() as { email: string; roles: string[] };
-          usersData.push({
-            id: docSnap.id,       // استخدم ID المستند
-            email: data.email,
-            roles: Array.isArray(data.roles) ? data.roles : ["viewer"],
-          });
-        });
-        setUsers(usersData);
+        setLoading(true);
+        setError(null);
+        const res = await fetch("/api/admin/users", { cache: "no-store" });
+        const payload = (await res.json().catch(() => ({}))) as { users?: UserType[]; error?: string };
+        if (!res.ok) {
+          throw new Error(payload.error || "فشل تحميل المستخدمين");
+        }
+        setUsers(Array.isArray(payload.users) ? payload.users : []);
       } catch (err) {
         console.error("خطأ عند جلب المستخدمين:", err);
+        setUsers([]);
+        setError("خطأ عند جلب المستخدمين. تأكد من امتلاك صلاحية الأدمن أو راجع السجلات.");
       } finally {
         setLoading(false);
       }
@@ -56,30 +68,47 @@ export default function AdminUsersPageContent() {
   }, [session]);
 
   const handleToggleRole = async (userId: string, roleKey: string, checked: boolean) => {
+    const user = users.find((u) => u.id === userId);
+    if (!user) return;
+
+    const updatedRoles = checked
+      ? [...user.roles, roleKey].filter((v, i, a) => a.indexOf(v) === i)
+      : user.roles.filter((r) => r !== roleKey);
+    const previousRoles = user.roles;
+
+    setPendingUserId(userId);
+    setError(null);
+    setUsers((prev) =>
+      prev.map((u) => (u.id === userId ? { ...u, roles: updatedRoles } : u))
+    );
+
     try {
-      const user = users.find((u) => u.id === userId);
-      if (!user) return;
-
-      const updatedRoles = checked
-        ? [...user.roles, roleKey].filter((v, i, a) => a.indexOf(v) === i)
-        : user.roles.filter((r) => r !== roleKey);
-
-      await updateDoc(doc(db, "users", userId), { roles: updatedRoles });
-
-      setUsers((prev) =>
-        prev.map((u) => (u.id === userId ? { ...u, roles: updatedRoles } : u))
-      );
+      const res = await fetch("/api/admin/users", {
+        method: "PATCH",
+        headers: {
+          "Content-Type": "application/json",
+        },
+        body: JSON.stringify({ userId, roles: updatedRoles }),
+      });
+      const payload = (await res.json().catch(() => ({}))) as { error?: string };
+      if (!res.ok) {
+        throw new Error(payload.error || "فشل تحديث الأدوار");
+      }
     } catch (err) {
       console.error("فشل تعديل الأدوار:", err);
+      setError("تعذر حفظ التعديلات على الأدوار. حاول مرة أخرى.");
+      setUsers((prev) =>
+        prev.map((u) =>
+          u.id === userId ? { ...u, roles: previousRoles } : u
+        )
+      );
+    } finally {
+      setPendingUserId(null);
     }
   };
 
-  const getRoleInfo = (roleKey: string) => {
-    return availableRoles.find(role => role.key === roleKey) || availableRoles[0];
-  };
-
   if (loading) return <LoadingPage />;
-  
+
   if (!session || !session.user.roles?.includes("admin")) {
     return (
       <div className="min-h-screen flex items-center justify-center" style={{
@@ -173,6 +202,12 @@ export default function AdminUsersPageContent() {
           </div>
         </div>
 
+        {error && (
+          <div className="mb-6 rounded-lg border border-red-300 bg-red-50 p-4 text-red-700">
+            {error}
+          </div>
+        )}
+
         {/* Users Table */}
         <div className="bg-white/10 backdrop-blur-md rounded-lg overflow-hidden">
           <div className="p-6 border-b border-white/20">
@@ -233,10 +268,11 @@ export default function AdminUsersPageContent() {
                         {availableRoles.map((role) => {
                           const IconComponent = role.icon;
                           const isChecked = user.roles.includes(role.key);
+                          const isUpdating = pendingUserId === user.id;
                           return (
                             <label 
                               key={role.key} 
-                              className="flex items-center space-x-2 cursor-pointer group"
+                              className={`flex items-center space-x-2 cursor-pointer group ${isUpdating ? 'opacity-60 pointer-events-none' : ''}`}
                             >
                               <div className="relative">
                                 <input
@@ -244,6 +280,7 @@ export default function AdminUsersPageContent() {
                                   checked={isChecked}
                                   onChange={(e) => handleToggleRole(user.id, role.key, e.target.checked)}
                                   className="sr-only"
+                                  disabled={isUpdating}
                                 />
                                 <div className={`w-5 h-5 rounded border-2 flex items-center justify-center transition-colors ${
                                   isChecked 
