@@ -1,36 +1,53 @@
-# ✍️ Interactive Blogging Platform
+# 📰 Seen (سين)
 
-A fully featured Arabic blogging platform built with **Next.js 15** that empowers writers and editors to create, review, and publish high-quality articles, featuring a polished Arabic UI and immersive 3D experiences.
-
----
-
-## ✨ Highlights
-
-- **Arabic-first interface** with full RTL support.
-- **Writer Dashboard**  
-  - Rich text editing powered by **Tiptap**.  
-  - Upload `TXT`, `DOCX`, `PDF` files and auto-import their content.  
-  - Live image previews and formatting shortcuts.
-- **Editor Dashboard**  
-  - Review drafts, edit content, and control publication status.  
-  - Manage categories and ensure content quality before publishing.
-- **3D introduction section** using `three.js`, `@react-three/fiber`, and `@react-three/drei`.
-- **Firebase integration** for authentication, Firestore, and storage.
-- **Role-aware access** for writers, editors, and administrators.
+**Seen** is a modern and dynamic online newspaper platform built with **Next.js** and **Firebase**.  
+It provides a seamless reading, writing, and administration experience with real-time updates, secure authentication, and immersive 3D visuals powered by **Three.js** and **React Three Fiber**.
 
 ---
 
-## 🛠️ Tech Stack
+## 🚀 Features
 
-- **Next.js 15.5**
-- **React 19**
-- **TypeScript 5**
-- **Tailwind CSS 4**
-- **Tiptap Editor**
-- **Firebase (Firestore + Storage + Auth)**
-- **Three.js + @react-three/fiber + @react-three/drei**
-- **Framer Motion**
-- **Node.js 20+** (recommended)
+- 🧩 **Multi-Role System** — Supports four user roles:
+  - **Viewer** – can read articles.
+  - **Writer** – can create and edit their own posts.
+  - **Editor** – can review, modify, and publish posts written by others.
+  - **Admin** – full access to manage users, roles, and system settings.
+
+- 🔐 **Secure Authentication**
+  - Built with **NextAuth.js** and **Firebase Authentication**.
+  - Email & password sign-in.
+  - Encrypted user data and Firestore-based role management.
+
+- 🗞️ **Content Management**
+  - Articles stored in **Firestore** for real-time updates.
+  - **Tiptap** rich-text editor with image and placeholder support.
+  - Role-based permissions for publishing and editing.
+
+- 🎨 **Immersive Design**
+  - Elegant, responsive UI crafted with **React components**.
+  - 3D interactive elements using **React Three Fiber**.
+  - Integrated **Lottie JSON animations** for smooth motion effects.
+  - Custom reusable UI pieces imported from **React Bits**.
+
+- ⚙️ **Scalable Architecture**
+  - Modular folder structure following Next.js 14+ app router conventions.
+  - Server-side route protection for admin/editor pages.
+  - Clean integration between frontend and Firebase backend.
 
 ---
+
+## 🧠 Tech Stack
+
+| Category | Technology |
+|-----------|-------------|
+| **Framework** | Next.js (App Router, JavaScript) |
+| **Database** | Firebase Firestore |
+| **Auth System** | NextAuth.js + Firebase |
+| **3D Engine** | Three.js + React Three Fiber |
+| **Animations** | Lottie JSON |
+| **UI Components** | React Bits + Custom Components |
+| **Rich Text Editor** | Tiptap |
+
+---
+
 
