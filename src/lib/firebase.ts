@@ -30,10 +30,5 @@ export const db = (() => {
 export const auth = getAuth(app);
 export const storage = getStorage(app);
 
-if (typeof window !== "undefined") {
-  (window as typeof window & { __FIREBASE_APP__?: FirebaseApp }).__FIREBASE_APP__ = app;
-  // TODO: Remove this log after confirming production environment configuration.
-  console.log("[Debug] Firebase projectId:", app.options.projectId);
-}
 
 export default app;
