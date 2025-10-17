@@ -42,6 +42,7 @@ const EDITOR_CATEGORIES = [
   "رأي",
   "التحقيقات الاستقصائية",
   "أسلوب حياة",
+  "قانون",
 ];
 
 type PostData = {
