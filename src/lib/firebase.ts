@@ -1,7 +1,7 @@
 import { initializeApp, getApps, FirebaseApp } from "firebase/app";
-import { getFirestore, initializeFirestore } from "firebase/firestore";
-import { getAuth } from "firebase/auth";
-import { getStorage } from "firebase/storage";
+import { initializeFirestore, connectFirestoreEmulator } from "firebase/firestore";
+import { getAuth, connectAuthEmulator } from "firebase/auth";
+import { getStorage, connectStorageEmulator } from "firebase/storage";
 const firebaseConfig = {
   apiKey: process.env.NEXT_PUBLIC_FIREBASE_API_KEY!,
   authDomain: process.env.NEXT_PUBLIC_FIREBASE_AUTH_DOMAIN!,
@@ -16,19 +16,39 @@ const app: FirebaseApp = !getApps().length
   ? initializeApp(firebaseConfig)
   : getApps()[0];
 
-// إضافة Firestore (تمكين auto long polling لمعالجة مشاكل الشبكة/الوكلاء)
-export const db = (() => {
-  try {
-    return initializeFirestore(app, {
-      ignoreUndefinedProperties: true,
-      experimentalAutoDetectLongPolling: true,
-    });
-  } catch {
-    return getFirestore(app);
+// تهيئة Firestore مع إعدادات محسنة
+const initializeFirebaseServices = () => {
+  // تهيئة Firestore
+  const firestore = initializeFirestore(app, {
+    ignoreUndefinedProperties: true,
+    experimentalForceLongPolling: true
+  });
+
+  // تهيئة Authentication
+  const authService = getAuth(app);
+  
+  // تهيئة Storage
+  const storageService = getStorage(app);
+
+  // في بيئة التطوير المحلي، يمكنك تفعيل المحاكي
+  if (process.env.NODE_ENV === 'development') {
+    try {
+      // تأكد من تعطيل المحاكي إذا كان قيد التشغيل بالفعل
+      connectFirestoreEmulator(firestore, 'localhost', 8080);
+      connectAuthEmulator(authService, 'http://localhost:9099');
+      connectStorageEmulator(storageService, 'localhost', 9199);
+      console.log('Firebase Emulators connected');
+    } catch (error) {
+      console.log('Not using Firebase Emulators', error);
+    }
   }
-})();
-export const auth = getAuth(app);
-export const storage = getStorage(app);
 
+  return { firestore, authService, storageService };
+};
 
+const { firestore, authService, storageService } = initializeFirebaseServices();
+
+export const db = firestore;
+export const auth = authService;
+export const storage = storageService;
 export default app;
