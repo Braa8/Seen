@@ -454,10 +454,10 @@ export default function WriterDashboard({ onPublished }: Props) {
               }}
             />
             {uploadingImage && <p className="text-sm text-blue-600 mt-2">جارٍ رفع الصورة...</p>}
-            {imageUrl && (
+            {imageUrl ? (
               <div className="mt-3">
                 <p className="text-xs text-gray-600 mb-2">معاينة الصورة:</p>
-                <div className="relative w-full h-48 rounded-lg border border-gray-300 overflow-hidden">
+                <div className="relative w-full h-48 rounded-lg border border-gray-300 overflow-hidden bg-gray-100">
                   <Image
                     src={imageUrl}
                     alt="معاينة الصورة"
@@ -465,33 +465,34 @@ export default function WriterDashboard({ onPublished }: Props) {
                     className="object-cover"
                     onError={(e) => {
                       const target = e.target as HTMLImageElement;
-                      // Hide the broken image
                       target.style.display = 'none';
-                      
-                      // Show error placeholder
                       const parent = target.parentElement;
                       if (parent && !parent.querySelector('.image-error-placeholder')) {
-                        const placeholder = document.createElement('div');
-                        placeholder.className = 'w-full h-full bg-gray-100 flex items-center justify-center';
-                        placeholder.innerHTML = `
+                        const errorDiv = document.createElement('div');
+                        errorDiv.className = 'absolute inset-0 flex items-center justify-center bg-gray-100';
+                        errorDiv.innerHTML = `
                           <div class="text-center p-2">
-                            <span class="text-gray-400 text-sm block">تعذر تحميل الصورة</span>
+                            <span class="text-gray-400 text-sm">تعذر تحميل الصورة</span>
                           </div>
                         `;
-                        parent.appendChild(placeholder);
+                        parent.appendChild(errorDiv);
                       }
                     }}
                     onLoad={(e) => {
                       const target = e.target as HTMLImageElement;
-                      // Clean up blob URL after image loads
-                      if (target?.src.startsWith('blob:')) {
+                      if (imageUrl.startsWith('blob:')) {
                         URL.revokeObjectURL(target.src);
                       }
                     }}
                   />
+                  {uploadingImage && (
+                    <div className="absolute inset-0 flex items-center justify-center bg-black bg-opacity-20">
+                      <div className="w-10 h-10 border-4 border-white border-t-blue-500 rounded-full animate-spin"></div>
+                    </div>
+                  )}
                 </div>
               </div>
-            )}
+            ) : null}
           </div>
 
           <div>

@@ -614,48 +614,45 @@ export default function EditorDashboard() {
                     <div className="md:flex-shrink-0 md:w-48 h-48 md:h-auto relative">
                       <div className="mt-3">
                         <p className="text-xs text-gray-600 mb-2">معاينة الصورة:</p>
-                        <div className="relative w-full h-48 rounded-lg border border-gray-300 overflow-hidden">
-                          {p.image.startsWith('blob:') ? (
-                            <Image
-                              src={p.image}
-                              alt="معاينة الصورة"
-                              className="w-full h-full object-cover"
-                              onLoad={(e) => {
-                                const target = e.target as HTMLImageElement;
-                                URL.revokeObjectURL(target.src);
-                              }}
-                              onError={(e) => {
-                                const target = e.target as HTMLImageElement;
-                                target.style.display = 'none';
-                                const errorDiv = document.createElement('div');
-                                errorDiv.className = 'w-full h-full bg-gray-100 flex items-center justify-center';
-                                errorDiv.innerHTML = `
-                                  <div class="text-center p-2">
-                                    <span class="text-gray-400 text-sm block">تعذر تحميل الصورة</span>
-                                  </div>
-                                `;
-                                target.parentNode?.insertBefore(errorDiv, target.nextSibling);
-                              }}
-                            />
+                        <div className="relative w-full h-48 rounded-lg border border-gray-300 overflow-hidden bg-gray-100">
+                          {p.image ? (
+                            <>
+                              <Image
+                                src={p.image}
+                                alt="معاينة الصورة"
+                                fill
+                                className="object-cover"
+                                onLoad={(e) => {
+                                  // Clean up blob URL if this was a preview
+                                  if (p.image?.startsWith('blob:')) {
+                                    const target = e.target as HTMLImageElement;
+                                    URL.revokeObjectURL(target.src);
+                                  }
+                                }}
+                                onError={(e) => {
+                                  const target = e.target as HTMLImageElement;
+                                  target.style.display = 'none';
+                                  const parent = target.parentElement;
+                                  if (parent && !parent.querySelector('.image-error-placeholder')) {
+                                    const errorDiv = document.createElement('div');
+                                    errorDiv.className = 'absolute inset-0 flex items-center justify-center bg-gray-100';
+                                    errorDiv.innerHTML = `
+                                      <div class="text-center p-2">
+                                        <span class="text-gray-400 text-sm">تعذر تحميل الصورة</span>
+                                      </div>
+                                    `;
+                                    parent.appendChild(errorDiv);
+                                  }
+                                }}
+                              />
+                              <div className="absolute inset-0 flex items-center justify-center pointer-events-none">
+                                <div className="w-10 h-10 border-4 border-gray-300 border-t-blue-500 rounded-full animate-spin"></div>
+                              </div>
+                            </>
                           ) : (
-                            <Image
-                              src={p.image}
-                              alt="معاينة الصورة"
-                              fill
-                              className="object-cover"
-                              onError={(e) => {
-                                const target = e.target as HTMLImageElement;
-                                target.style.display = 'none';
-                                const errorDiv = document.createElement('div');
-                                errorDiv.className = 'w-full h-full bg-gray-100 flex items-center justify-center';
-                                errorDiv.innerHTML = `
-                                  <div class="text-center p-2">
-                                    <span class="text-gray-400 text-sm block">تعذر تحميل الصورة</span>
-                                  </div>
-                                `;
-                                target.parentNode?.insertBefore(errorDiv, target.nextSibling);
-                              }}
-                            />
+                            <div className="w-full h-full flex items-center justify-center text-gray-400">
+                              لا توجد صورة
+                            </div>
                           )}
                         </div>
                       </div>
