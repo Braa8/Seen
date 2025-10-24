@@ -260,17 +260,51 @@ export default function WriterDashboard({ onPublished }: Props) {
   };
 
   const handleImageUpload = async (file: File) => {
-    if (!session?.user?.id) return null;
+    if (!session?.user?.id) {
+      console.error('No user session found');
+      return null;
+    }
+    
     try {
       setUploadingImage(true);
-      const timestamp = Date.now();
-      const imageRef = ref(storage, `post-images/${session.user.id}/${timestamp}_${file.name}`);
-      await uploadBytes(imageRef, file);
-      const url = await getDownloadURL(imageRef);
-      return url;
+      setMessage("جاري رفع الصورة...");
+      
+      // Create a unique filename with timestamp and original filename
+      const fileExt = file.name.split('.').pop();
+      const fileName = `${Date.now()}.${fileExt}`;
+      const storagePath = `post-images/${session.user.id}/${fileName}`;
+      
+      // Create a reference to the storage location
+      const storageRef = ref(storage, storagePath);
+      
+      console.log('Starting upload of:', file.name, 'to:', storagePath);
+      
+      // Upload the file
+      const uploadTask = uploadBytes(storageRef, file);
+      const snapshot = await uploadTask;
+      
+      console.log('Upload completed, getting download URL...');
+      
+      // Get the download URL
+      const downloadURL = await getDownloadURL(snapshot.ref);
+      console.log('File uploaded successfully. URL:', downloadURL);
+      
+      // Verify the URL is accessible
+      try {
+        const response = await fetch(downloadURL, { method: 'HEAD' });
+        if (!response.ok) {
+          throw new Error(`HTTP error! status: ${response.status}`);
+        }
+        console.log('Image URL is accessible');
+      } catch (error) {
+        console.error('Error verifying image URL:', error);
+        throw new Error('فشل في التحقق من صحة رابط الصورة');
+      }
+      
+      return downloadURL;
     } catch (error) {
       console.error("Error uploading image:", error);
-      setMessage("فشل رفع الصورة");
+      setMessage("فشل رفع الصورة: " + (error instanceof Error ? error.message : 'حدث خطأ غير معروف'));
       return null;
     } finally {
       setUploadingImage(false);
@@ -278,32 +312,56 @@ export default function WriterDashboard({ onPublished }: Props) {
   };
 
   const handlePublish = async () => {
-    if (!editor || !session?.user?.id) return;
+    if (!editor || !session?.user?.id) {
+      setMessage("خطأ: لم يتم العثور على بيانات المستخدم");
+      return;
+    }
 
     try {
       setLoading(true);
-      setMessage(null);
+      setMessage("جاري نشر المنشور...");
 
+      // Upload image if a new one was selected
       let uploadedImageUrl = imageUrl;
       if (imageFile) {
+        setMessage("جاري رفع الصورة...");
         const url = await handleImageUpload(imageFile);
-        if (url) uploadedImageUrl = url;
+        if (!url) {
+          throw new Error("فشل رفع الصورة. يرجى المحاولة مرة أخرى");
+        }
+        uploadedImageUrl = url;
       }
 
-      const docRef = await addDoc(collection(db, "posts"), {
+      // Validate required fields
+      if (!title.trim()) {
+        throw new Error("العنوان مطلوب");
+      }
+
+      const content = editor.getHTML();
+      if (!content || content === '<p></p>') {
+        throw new Error("محتوى المنشور مطلوب");
+      }
+
+      // Create the post data
+      // Create the post data
+      const postData = {
         authorId: session.user.id,
         authorEmail: userEmail,
         authorName: userName,
         title: title.trim(),
         excerpt: excerpt.trim() || editor.getText().substring(0, 150) + "...",
-        content: editor.getHTML(),
+        content: content,
         category,
-        image: uploadedImageUrl || undefined,
+        image: uploadedImageUrl || null,
         createdAt: serverTimestamp(),
         updatedAt: serverTimestamp(),
-        status: "draft",
-      });
+        status: "draft"
+      };
 
+      // Add the post to Firestore
+      const docRef = await addDoc(collection(db, "posts"), postData);
+
+      // Reset form
       setMessage("تم حفظ المسودة بنجاح 📝 - سيتم مراجعتها من قبل المحرر");
       setTitle("");
       setExcerpt("");
@@ -312,7 +370,13 @@ export default function WriterDashboard({ onPublished }: Props) {
       setImageFile(null);
       editor.commands.setContent("");
       setEditorContent("");
-      window.localStorage.removeItem(storageKey);
+      
+      // Clear draft from local storage
+      if (typeof window !== "undefined") {
+        window.localStorage.removeItem(storageKey);
+      }
+      
+      // Notify parent component if needed
       onPublished?.(docRef.id);
     } catch (error) {
       console.error(error);

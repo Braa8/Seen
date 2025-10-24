@@ -3,7 +3,9 @@
 
 import { useEffect, useMemo, useRef, useState } from "react";
 import { useSession } from "next-auth/react";
-import { db } from "../lib/firebase";
+import { db, storage } from "../lib/firebase";
+import { ref, uploadBytes, getDownloadURL } from "firebase/storage";
+import { FieldValue } from 'firebase/firestore';
 import LoadingPage from "./LoadingPage";
 import {
   collection,
@@ -17,8 +19,6 @@ import {
   updateDoc,
   where,
 } from "firebase/firestore";
-import { ref, uploadBytes, getDownloadURL } from "firebase/storage";
-import { storage } from "../lib/firebase";
 import { useEditor, EditorContent } from "@tiptap/react";
 import StarterKit from "@tiptap/starter-kit";
 import Placeholder from "@tiptap/extension-placeholder";
@@ -249,17 +249,51 @@ export default function EditorDashboard() {
   };
 
   const handleImageUpload = async (file: File) => {
-    if (!session?.user?.id) return null;
+    if (!session?.user?.id) {
+      console.error('No user session found');
+      return null;
+    }
+    
     try {
       setUploadingImage(true);
-      const timestamp = Date.now();
-      const imageRef = ref(storage, `post-images/${session.user.id}/${timestamp}_${file.name}`);
-      await uploadBytes(imageRef, file);
-      const url = await getDownloadURL(imageRef);
-      return url;
+      setMessage("جاري رفع الصورة...");
+      
+      // Create a unique filename with timestamp and original filename
+      const fileExt = file.name.split('.').pop();
+      const fileName = `${Date.now()}.${fileExt}`;
+      const storagePath = `post-images/${session.user.id}/${fileName}`;
+      
+      // Create a reference to the storage location
+      const storageRef = ref(storage, storagePath);
+      
+      console.log('Starting upload of:', file.name, 'to:', storagePath);
+      
+      // Upload the file
+      const uploadTask = uploadBytes(storageRef, file);
+      const snapshot = await uploadTask;
+      
+      console.log('Upload completed, getting download URL...');
+      
+      // Get the download URL
+      const downloadURL = await getDownloadURL(snapshot.ref);
+      console.log('File uploaded successfully. URL:', downloadURL);
+      
+      // Verify the URL is accessible
+      try {
+        const response = await fetch(downloadURL, { method: 'HEAD' });
+        if (!response.ok) {
+          throw new Error(`HTTP error! status: ${response.status}`);
+        }
+        console.log('Image URL is accessible');
+      } catch (error) {
+        console.error('Error verifying image URL:', error);
+        throw new Error('فشل في التحقق من صحة رابط الصورة');
+      }
+      
+      return downloadURL;
     } catch (error) {
       console.error("Error uploading image:", error);
-      setMessage("فشل رفع الصورة");
+      setMessage("فشل رفع الصورة: " + (error instanceof Error ? error.message : 'حدث خطأ غير معروف'));
       return null;
     } finally {
       setUploadingImage(false);
@@ -286,6 +320,7 @@ export default function EditorDashboard() {
         const url = await handleImageUpload(editImageFile);
         if (url) {
           uploadedImageUrl = url;
+          console.log('Image uploaded successfully, URL:', url);
         } else {
           throw new Error("فشل رفع الصورة");
         }
@@ -302,14 +337,32 @@ export default function EditorDashboard() {
 
       // تحديث المستند
       setMessage("جاري حفظ التغييرات...");
-      await updateDoc(doc(db, "posts", selectedPost.id), {
+      // Define the type for the update data
+      type PostUpdateData = {
+        title: string;
+        excerpt: string;
+        category: string;
+        content: string;
+        updatedAt: FieldValue;
+        image?: string | null;
+      };
+
+      const updateData: PostUpdateData = {
         title: editTitle.trim(),
         excerpt: editExcerpt.trim(),
         category: editCategory,
-        image: uploadedImageUrl || null,
         content: editor.getHTML(),
         updatedAt: serverTimestamp()
-      });
+      };
+
+      // Only update image field if we have a new image or explicitly setting to null
+      if (uploadedImageUrl !== undefined) {
+        updateData.image = uploadedImageUrl || null;
+      }
+
+      console.log('Updating post with data:', updateData);
+      
+      await updateDoc(doc(db, "posts", selectedPost.id), updateData);
 
       // إعادة تعيين الحقول بعد الحفظ الناجح
       setMessage("تم حفظ التعديلات بنجاح ✅");
@@ -547,17 +600,28 @@ export default function EditorDashboard() {
               <div key={p.id} className="border border-gray-200 rounded-lg overflow-hidden hover:shadow-md transition">
                 <div className="md:flex">
                   {p.image && (
-                    <div className="md:flex-shrink-0 md:w-48 h-48 md:h-auto">
+                    <div className="md:flex-shrink-0 md:w-48 h-48 md:h-auto relative">
                       <Image
                         src={p.image}
                         alt={p.title}
-                        width={300}
-                        height={200}
-                        className="w-full h-full object-cover"
+                        fill
+                        sizes="(max-width: 768px) 100vw, 300px"
+                        className="object-cover"
                         onError={(e) => {
+                          console.error('Error loading image:', p.image);
                           const target = e.target as HTMLImageElement;
                           target.style.display = 'none';
+                          // Show a placeholder if image fails to load
+                          const parent = target.parentElement;
+                          if (parent) {
+                            parent.innerHTML = `
+                              <div class="w-full h-full bg-gray-100 flex items-center justify-center">
+                                <span class="text-gray-400 text-sm">فشل تحميل الصورة</span>
+                              </div>
+                            `;
+                          }
                         }}
+                        onLoad={() => console.log('Image loaded successfully:', p.image)}
                       />
                     </div>
                   )}
