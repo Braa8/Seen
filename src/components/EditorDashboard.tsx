@@ -612,70 +612,54 @@ export default function EditorDashboard() {
                 <div className="md:flex">
                   {p.image && (
                     <div className="md:flex-shrink-0 md:w-48 h-48 md:h-auto relative">
-                      {p.image.startsWith('blob:') ? (
-                        // For blob URLs, show a placeholder immediately to avoid the error
-                        <div className="w-full h-full bg-gray-100 flex items-center justify-center">
-                          <span className="text-gray-400 text-sm">معاينة الصورة</span>
+                      <div className="mt-3">
+                        <p className="text-xs text-gray-600 mb-2">معاينة الصورة:</p>
+                        <div className="relative w-full h-48 rounded-lg border border-gray-300 overflow-hidden">
+                          <Image
+                            src={p.image}
+                            alt="معاينة الصورة"
+                            fill
+                            className="object-cover"
+                            onError={(e) => {
+                              const target = e.target as HTMLImageElement;
+                              target.style.display = 'none';
+                              const errorDiv = document.createElement('div');
+                              errorDiv.className = 'w-full h-full bg-gray-100 flex items-center justify-center';
+                              const errorContent = document.createElement('div');
+                              errorContent.className = 'text-center p-2';
+                              const errorText = document.createElement('span');
+                              errorText.className = 'text-gray-400 text-sm block';
+                              errorText.textContent = 'تعذر تحميل الصورة';
+                              errorContent.appendChild(errorText);
+                              errorDiv.appendChild(errorContent);
+                              target.parentNode?.insertBefore(errorDiv, target.nextSibling);
+                            }}
+                            onLoad={(e) => {
+                              const target = e.target as HTMLImageElement;
+                              if (target?.src.startsWith('blob:')) {
+                                URL.revokeObjectURL(target.src);
+                              }
+                            }}
+                          />
                         </div>
-                      ) : (
-                        // For regular URLs, try to load the image
-                        <Image
-                          src={p.image}
-                          alt={p.title}
-                          fill
-                          sizes="(max-width: 768px) 100vw, 300px"
-                          className="object-cover"
-                          onError={(e) => {
-                            const target = e.target as HTMLImageElement;
-                            // Revoke blob URL to prevent memory leaks
-                            if (target.src.startsWith('blob:')) {
-                              URL.revokeObjectURL(target.src);
-                            }
-                            
-                            // Hide the broken image
-                            target.style.display = 'none';
-                            
-                            // Show error placeholder
-                            const parent = target.parentElement;
-                            if (parent && !parent.querySelector('.image-error-placeholder')) {
-                              const placeholder = document.createElement('div');
-                              placeholder.className = 'w-full h-full bg-gray-100 flex items-center justify-center image-error-placeholder';
-                              placeholder.innerHTML = `
-                                <div className="text-center p-2">
-                                  <span className="text-gray-400 text-sm block">فشل تحميل الصورة</span>
-                                </div>
-                              `;
-                              parent.appendChild(placeholder);
-                            }
-                          }}
-                          onLoad={(e) => {
-                            const target = e.target as HTMLImageElement;
-                            // If the image is a blob URL, we might want to handle it differently
-                            if (target?.src.startsWith('blob:')) {
-                              console.log('Loaded blob image');
-                            } else {
-                              console.log('Image loaded successfully');
-                            }
-                          }}
-                        />
-                      )}
+                      </div>
                     </div>
                   )}
                   <div className="p-4 flex-1">
                     <div className="flex flex-wrap items-center gap-2 mb-2">
                       <h3 className="text-lg font-semibold text-gray-800">{p.title}</h3>
-                      <div className="flex items-center gap-2 flex-wrap">
-                        <span className={`px-2 py-1 rounded-full text-xs font-semibold ${
-                          p.status === 'published' ? 'bg-green-100 text-green-700' : 'bg-yellow-100 text-yellow-700'
-                        }`}>
-                          {p.status === 'published' ? 'منشور' : 'مسودة'}
-                        </span>
-                        <span className="px-2 py-1 bg-blue-100 text-blue-700 rounded-full text-xs font-semibold">
-                          {p.category}
-                        </span>
-                      </div>
+                      <span className={`px-2 py-1 rounded-full text-xs font-semibold ${
+                        p.status === 'published' ? 'bg-green-100 text-green-700' : 'bg-yellow-100 text-yellow-700'
+                      }`}>
+                        {p.status === 'published' ? 'منشور' : 'مسودة'}
+                      </span>
+                      <span className="px-2 py-1 bg-blue-100 text-blue-700 rounded-full text-xs font-semibold">
+                        {p.category}
+                      </span>
                     </div>
-                    <p className="text-sm text-gray-600 mb-3 line-clamp-2">{p.excerpt}</p>
+                    {p.excerpt && (
+                      <p className="text-sm text-gray-600 mb-3 line-clamp-2">{p.excerpt}</p>
+                    )}
                     <p className="text-xs text-gray-500">
                       بواسطة: {p.authorName || p.authorEmail || "غير معروف"}
                     </p>
