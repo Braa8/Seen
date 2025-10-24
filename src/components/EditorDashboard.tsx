@@ -52,6 +52,7 @@ type PostData = {
   content: string;
   status: string;
   category: string;
+  image?: string;
   authorName?: string;
   authorEmail?: string;
   createdAt?: unknown;
@@ -125,6 +126,7 @@ export default function EditorDashboard() {
           content: data.content || "",
           status: data.status || "draft",
           category: data.category || "",
+          image: data.image || "",
           authorName: data.authorName,
           authorEmail: data.authorEmail,
           createdAt: data.createdAt
@@ -542,51 +544,71 @@ export default function EditorDashboard() {
 
           <div className="space-y-3">
             {posts.map((p) => (
-              <div key={p.id} className="border border-gray-200 rounded-lg p-4 hover:shadow-md transition">
-                <div className="flex items-start justify-between gap-4">
-                  <div className="flex-1">
-                    <div className="flex items-center gap-3 mb-2">
-                      <h3 className="font-semibold text-gray-800">{p.title}</h3>
-                      <span className={`px-3 py-1 rounded-full text-xs font-semibold ${
-                        p.status === 'published' ? 'bg-green-100 text-green-700' : 'bg-yellow-100 text-yellow-700'
-                      }`}>
-                        {p.status === 'published' ? 'منشور' : 'مسودة'}
-                      </span>
-                      <span className="px-3 py-1 bg-blue-100 text-blue-700 rounded-full text-xs font-semibold">
-                        {p.category}
-                      </span>
+              <div key={p.id} className="border border-gray-200 rounded-lg overflow-hidden hover:shadow-md transition">
+                <div className="md:flex">
+                  {p.image && (
+                    <div className="md:flex-shrink-0 md:w-48 h-48 md:h-auto">
+                      <Image
+                        src={p.image}
+                        alt={p.title}
+                        width={300}
+                        height={200}
+                        className="w-full h-full object-cover"
+                        onError={(e) => {
+                          const target = e.target as HTMLImageElement;
+                          target.style.display = 'none';
+                        }}
+                      />
                     </div>
-                    <p className="text-sm text-gray-600 mb-2">{p.excerpt}</p>
-                    <p className="text-xs text-gray-500">بواسطة: {p.authorName || p.authorEmail || "غير معروف"}</p>
+                  )}
+                  <div className="p-4 flex-1">
+                    <div className="flex flex-wrap items-center gap-2 mb-2">
+                      <h3 className="text-lg font-semibold text-gray-800">{p.title}</h3>
+                      <div className="flex items-center gap-2 flex-wrap">
+                        <span className={`px-2 py-1 rounded-full text-xs font-semibold ${
+                          p.status === 'published' ? 'bg-green-100 text-green-700' : 'bg-yellow-100 text-yellow-700'
+                        }`}>
+                          {p.status === 'published' ? 'منشور' : 'مسودة'}
+                        </span>
+                        <span className="px-2 py-1 bg-blue-100 text-blue-700 rounded-full text-xs font-semibold">
+                          {p.category}
+                        </span>
+                      </div>
+                    </div>
+                    <p className="text-sm text-gray-600 mb-3 line-clamp-2">{p.excerpt}</p>
+                    <p className="text-xs text-gray-500">
+                      بواسطة: {p.authorName || p.authorEmail || "غير معروف"}
+                    </p>
                   </div>
-
-                  <div className="flex flex-col gap-2">
+                </div>
+                <div className="px-4 pb-4 pt-2 bg-gray-50 border-t border-gray-100">
+                  <div className="flex flex-wrap gap-2">
                     <button
                       onClick={() => loadPostForEdit(p.id)}
-                      className="px-4 py-2 bg-blue-600 text-white rounded-lg hover:bg-blue-700 transition text-sm font-semibold"
+                      className="px-3 py-1.5 bg-blue-600 text-white rounded-md hover:bg-blue-700 transition text-sm font-medium flex items-center gap-1"
                     >
-                      ✏️ تعديل
+                      <span>✏️</span> تعديل
                     </button>
                     {p.status === "published" ? (
                       <button
                         onClick={() => setStatus(p.id, "draft")}
-                        className="px-4 py-2 bg-yellow-600 text-white rounded-lg hover:bg-yellow-700 transition text-sm font-semibold"
+                        className="px-3 py-1.5 bg-yellow-600 text-white rounded-md hover:bg-yellow-700 transition text-sm font-medium flex items-center gap-1"
                       >
-                        📝 إلغاء النشر
+                        <span>📝</span> إلغاء النشر
                       </button>
                     ) : (
                       <button
                         onClick={() => setStatus(p.id, "published")}
-                        className="px-4 py-2 bg-green-600 text-white rounded-lg hover:bg-green-700 transition text-sm font-semibold"
+                        className="px-3 py-1.5 bg-green-600 text-white rounded-md hover:bg-green-700 transition text-sm font-medium flex items-center gap-1"
                       >
-                        ✅ نشر
+                        <span>✅</span> نشر
                       </button>
                     )}
                     <button
                       onClick={() => remove(p.id)}
-                      className="px-4 py-2 bg-red-600 text-white rounded-lg hover:bg-red-700 transition text-sm font-semibold"
+                      className="px-3 py-1.5 bg-red-600 text-white rounded-md hover:bg-red-700 transition text-sm font-medium flex items-center gap-1"
                     >
-                      🗑️ حذف
+                      <span>🗑️</span> حذف
                     </button>
                   </div>
                 </div>
