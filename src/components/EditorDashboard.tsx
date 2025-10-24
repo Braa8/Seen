@@ -611,51 +611,53 @@ export default function EditorDashboard() {
                 <div className="md:flex">
                   {p.image && (
                     <div className="md:flex-shrink-0 md:w-48 h-48 md:h-auto relative">
-                      <Image
-                        src={p.image}
-                        alt={p.title}
-                        fill
-                        sizes="(max-width: 768px) 100vw, 300px"
-                        className="object-cover"
-                        onError={(e) => {
-                          const target = e.target as HTMLImageElement;
-                          // Check if the source is a blob URL and revoke it to prevent memory leaks
-                          if (target.src.startsWith('blob:')) {
-                            URL.revokeObjectURL(target.src);
-                          }
-                          
-                          // Hide the broken image
-                          target.style.display = 'none';
-                          
-                          // Show a placeholder if image fails to load
-                          const parent = target.parentElement;
-                          if (parent && !parent.querySelector('.image-error-placeholder')) {
-                            const placeholder = document.createElement('div');
-                            placeholder.className = 'w-full h-full bg-gray-100 flex items-center justify-center image-error-placeholder';
-                            placeholder.innerHTML = `
-                              <div class="text-center p-2">
-                                <span class="text-gray-400 text-sm block">فشل تحميل الصورة</span>
-                                <button 
-                                  class="mt-1 text-xs text-red-500 hover:text-red-700"
-                                  onclick="this.closest('.relative').querySelector('img').style.display='none'; this.closest('.relative').querySelector('button').style.display='block'"
-                                >
-                                  إخفاء
-                                </button>
-                              </div>
-                            `;
-                            parent.appendChild(placeholder);
-                          }
-                        }}
-                        onLoad={() => {
-                          const target = event?.target as HTMLImageElement;
-                          // If the image is a blob URL, we might want to handle it differently
-                          if (target?.src.startsWith('blob:')) {
-                            console.log('Loaded blob image:', p.image);
-                          } else {
-                            console.log('Image loaded successfully:', p.image);
-                          }
-                        }}
-                      />
+                      {p.image.startsWith('blob:') ? (
+                        // For blob URLs, show a placeholder immediately to avoid the error
+                        <div className="w-full h-full bg-gray-100 flex items-center justify-center">
+                          <span className="text-gray-400 text-sm">معاينة الصورة</span>
+                        </div>
+                      ) : (
+                        // For regular URLs, try to load the image
+                        <Image
+                          src={p.image}
+                          alt={p.title}
+                          fill
+                          sizes="(max-width: 768px) 100vw, 300px"
+                          className="object-cover"
+                          onError={(e) => {
+                            const target = e.target as HTMLImageElement;
+                            // Revoke blob URL to prevent memory leaks
+                            if (target.src.startsWith('blob:')) {
+                              URL.revokeObjectURL(target.src);
+                            }
+                            
+                            // Hide the broken image
+                            target.style.display = 'none';
+                            
+                            // Show error placeholder
+                            const parent = target.parentElement;
+                            if (parent && !parent.querySelector('.image-error-placeholder')) {
+                              const placeholder = document.createElement('div');
+                              placeholder.className = 'w-full h-full bg-gray-100 flex items-center justify-center image-error-placeholder';
+                              placeholder.innerHTML = `
+                                <div className="text-center p-2">
+                                  <span className="text-gray-400 text-sm block">فشل تحميل الصورة</span>
+                                </div>
+                              `;
+                              parent.appendChild(placeholder);
+                            }
+                          }}
+                          onLoad={(e) => {
+                            const target = e.target as HTMLImageElement;
+                            // If the image is a blob URL, we might want to handle it differently
+                            if (target?.src.startsWith('blob:')) {
+                              console.log('Loaded blob image');
+                            } else {
+                              console.log('Image loaded successfully');
+                            }
+                          }}
+                        />
+                      )}
                     </div>
                   )}
                   <div className="p-4 flex-1">

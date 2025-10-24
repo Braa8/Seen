@@ -461,13 +461,43 @@ export default function WriterDashboard({ onPublished }: Props) {
             {imageUrl && (
               <div className="mt-3">
                 <p className="text-xs text-gray-600 mb-2">معاينة الصورة:</p>
-                <Image
-                  src={imageUrl}
-                  alt="معاينة"
-                  width={800}
-                  height={480}
-                  className="w-full h-48 object-cover rounded-lg border border-gray-300"
-                />
+                <div className="relative w-full h-48 rounded-lg border border-gray-300 overflow-hidden">
+                  {imageUrl.startsWith('blob:') ? (
+                    <div className="w-full h-full bg-gray-100 flex items-center justify-center">
+                      <span className="text-gray-400 text-sm">معاينة الصورة</span>
+                    </div>
+                  ) : (
+                    <Image
+                      src={imageUrl}
+                      alt="معاينة"
+                      fill
+                      className="object-cover"
+                      onError={(e) => {
+                        const target = e.target as HTMLImageElement;
+                        // Revoke blob URL to prevent memory leaks
+                        if (target.src.startsWith('blob:')) {
+                          URL.revokeObjectURL(target.src);
+                        }
+                        
+                        // Hide the broken image
+                        target.style.display = 'none';
+                        
+                        // Show error placeholder
+                        const parent = target.parentElement;
+                        if (parent && !parent.querySelector('.image-error-placeholder')) {
+                          const placeholder = document.createElement('div');
+                          placeholder.className = 'w-full h-full bg-gray-100 flex items-center justify-center image-error-placeholder';
+                          placeholder.innerHTML = `
+                            <div className="text-center p-2">
+                              <span className="text-gray-400 text-sm block">فشل تحميل الصورة</span>
+                            </div>
+                          `;
+                          parent.appendChild(placeholder);
+                        }
+                      }}
+                    />
+                  )}
+                </div>
               </div>
             )}
           </div>
