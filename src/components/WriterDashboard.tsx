@@ -285,13 +285,19 @@ export default function WriterDashboard({ onPublished }: Props) {
       
       // رفع الملف
       const storageRef = ref(storage, storagePath);
-      await uploadBytes(storageRef, file);
       
-      // الحصول على رابط التحميل
-      const downloadURL = await getDownloadURL(storageRef);
-      setMessage("✅ تم رفع الصورة بنجاح");
-      
-      return downloadURL;
+      try {
+        // رفع الملف أولاً
+        await uploadBytes(storageRef, file);
+        
+        // ثم الحصول على رابط التحميل
+        const downloadURL = await getDownloadURL(storageRef);
+        setMessage("✅ تم رفع الصورة بنجاح");
+        return downloadURL;
+      } catch (error) {
+        console.error("حدث خطأ أثناء رفع الملف:", error);
+        throw error; // إعادة رمي الخطأ للتعامل معه في catch الخارجي
+      }
     } catch (error) {
       console.error("Error uploading image:", error);
       setMessage("فشل رفع الصورة: " + (error instanceof Error ? error.message : 'حدث خطأ غير معروف'));

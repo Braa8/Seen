@@ -4,7 +4,7 @@
 import { useEffect, useMemo, useRef, useState } from "react";
 import { useSession } from "next-auth/react";
 import { db, storage } from "../lib/firebase";
-import { ref, getDownloadURL } from "firebase/storage";
+import { ref, getDownloadURL, uploadBytes } from "firebase/storage";
 import { FieldValue } from 'firebase/firestore';
 import LoadingPage from "./LoadingPage";
 import {
@@ -280,12 +280,18 @@ export default function EditorDashboard() {
       
       console.log('Starting upload of:', file.name, 'to:', storagePath);
       
-      // Upload the file with metadata
-      // Get the download URL
-      const downloadURL = await getDownloadURL(storageRef);
-      setMessage("✅ تم رفع الصورة بنجاح");
-      
-      return downloadURL;
+      try {
+        // First, upload the file
+        await uploadBytes(storageRef, file);
+        
+        // Then get the download URL
+        const downloadURL = await getDownloadURL(storageRef);
+        setMessage("✅ تم رفع الصورة بنجاح");
+        return downloadURL;
+      } catch (error) {
+        console.error("Error in upload process:", error);
+        throw error; // Re-throw to be caught by the outer catch block
+      }
     } catch (error) {
       console.error("Error uploading image:", error);
       setMessage("فشل رفع الصورة: " + (error instanceof Error ? error.message : 'حدث خطأ غير معروف'));
