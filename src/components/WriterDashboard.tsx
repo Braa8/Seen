@@ -445,46 +445,55 @@ export default function WriterDashboard({ onPublished }: Props) {
               type="file"
               accept="image/*"
               className="w-full border border-black p-3 rounded-lg focus:outline-none focus:ring-2 focus:ring-blue-500"
-              onChange={(e) => {
+              onChange={async (e) => {
                 const file = e.target.files?.[0];
                 if (file) {
                   setImageFile(file);
-                  setImageUrl(URL.createObjectURL(file));
+                  // Create a blob URL for preview
+                  const blobUrl = URL.createObjectURL(file);
+                  setImageUrl(blobUrl);
+                  
+                  // Clean up the blob URL when component unmounts or when a new image is selected
+                  return () => {
+                    URL.revokeObjectURL(blobUrl);
+                  };
+                } else {
+                  setImageUrl('');
+                  setImageFile(null);
                 }
               }}
             />
             {uploadingImage && <p className="text-sm text-blue-600 mt-2">جارٍ رفع الصورة...</p>}
-            {imageUrl ? (
+            {imageUrl && (
               <div className="mt-3">
                 <p className="text-xs text-gray-600 mb-2">معاينة الصورة:</p>
                 <div className="relative w-full h-48 rounded-lg border border-gray-300 overflow-hidden bg-gray-100">
-                  <Image
-                    src={imageUrl}
-                    alt="معاينة الصورة"
-                    fill
-                    className="object-cover"
-                    onError={(e) => {
-                      const target = e.target as HTMLImageElement;
-                      target.style.display = 'none';
-                      const parent = target.parentElement;
-                      if (parent && !parent.querySelector('.image-error-placeholder')) {
-                        const errorDiv = document.createElement('div');
-                        errorDiv.className = 'absolute inset-0 flex items-center justify-center bg-gray-100';
-                        errorDiv.innerHTML = `
-                          <div class="text-center p-2">
-                            <span class="text-gray-400 text-sm">تعذر تحميل الصورة</span>
-                          </div>
-                        `;
-                        parent.appendChild(errorDiv);
-                      }
-                    }}
-                    onLoad={(e) => {
-                      const target = e.target as HTMLImageElement;
-                      if (imageUrl.startsWith('blob:')) {
-                        URL.revokeObjectURL(target.src);
-                      }
-                    }}
-                  />
+                  <div className="w-full h-full relative">
+                    <Image
+                      src={imageUrl}
+                      alt="معاينة الصورة"
+                      fill
+                      className="object-cover"
+                      onError={(event) => {
+                        const target = event.target as HTMLImageElement;
+                        target.style.display = 'none';
+                        const parent = target.parentElement;
+                        if (parent && !parent.querySelector('.image-error-placeholder')) {
+                          const errorDiv = document.createElement('div');
+                          errorDiv.className = 'absolute inset-0 flex items-center justify-center bg-gray-100';
+                          errorDiv.innerHTML = `
+                            <div class="text-center p-2">
+                              <span class="text-gray-400 text-sm">تعذر تحميل الصورة</span>
+                            </div>
+                          `;
+                          parent.appendChild(errorDiv);
+                        }
+                      }}
+                      onLoad={() => {
+                        // Don't revoke the URL here as we need it for the preview
+                      }}
+                    />
+                  </div>
                   {uploadingImage && (
                     <div className="absolute inset-0 flex items-center justify-center bg-black bg-opacity-20">
                       <div className="w-10 h-10 border-4 border-white border-t-blue-500 rounded-full animate-spin"></div>
@@ -492,7 +501,7 @@ export default function WriterDashboard({ onPublished }: Props) {
                   )}
                 </div>
               </div>
-            ) : null}
+            )}
           </div>
 
           <div>
