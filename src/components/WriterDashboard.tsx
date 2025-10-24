@@ -94,7 +94,6 @@ export default function WriterDashboard({ onPublished }: Props) {
 
   useEffect(() => {
     if (!editor || draftLoadedRef.current) return;
-    if (typeof window === "undefined") return;
     draftLoadedRef.current = true;
     try {
       const raw = window.localStorage.getItem(storageKey);
@@ -261,8 +260,7 @@ export default function WriterDashboard({ onPublished }: Props) {
 
   const handleImageUpload = async (file: File) => {
     if (!session?.user?.id) {
-      console.error('No user session found');
-      setMessage("❌ لم يتم العثور على جلسة مستخدم. يرجى تسجيل الدخول مرة أخرى.");
+      setMessage("❌ يرجى تسجيل الدخول أولاً");
       return null;
     }
     
@@ -270,66 +268,30 @@ export default function WriterDashboard({ onPublished }: Props) {
       setUploadingImage(true);
       setMessage("جاري رفع الصورة...");
       
-      // Validate file type
-      const validTypes = ['image/jpeg', 'image/png', 'image/webp', 'image/gif'];
-      if (!validTypes.includes(file.type)) {
-        throw new Error('نوع الملف غير مدعوم. يرجى تحميل صورة بصيغة JPG أو PNG أو WebP أو GIF.');
+      // التحقق من نوع الملف
+      if (!file.type.startsWith('image/')) {
+        throw new Error('الرجاء رفع ملف صورة صالح (JPG, PNG, GIF)');
       }
       
-      // Validate file size (max 5MB)
-      const maxSize = 5 * 1024 * 1024; // 5MB
-      if (file.size > maxSize) {
-        throw new Error('حجم الصورة كبير جداً. الحد الأقصى المسموح به هو 5 ميجابايت.');
+      // التحقق من حجم الملف (5 ميجابايت كحد أقصى)
+      if (file.size > 5 * 1024 * 1024) {
+        throw new Error('حجم الصورة كبير جداً. الحد الأقصى 5 ميجابايت');
       }
       
-      // Create a unique filename with timestamp and original filename
+      // إنشاء اسم فريد للملف
       const fileExt = file.name.split('.').pop();
       const fileName = `${Date.now()}.${fileExt}`;
       const storagePath = `post-images/${session.user.id}/${fileName}`;
       
-      // Create a reference to the storage location
+      // رفع الملف
       const storageRef = ref(storage, storagePath);
+      await uploadBytes(storageRef, file);
       
-      // Add metadata including CORS headers
-      const metadata = {
-        contentType: file.type,
-        cacheControl: 'public, max-age=31536000', // 1 year cache
-      };
+      // الحصول على رابط التحميل
+      const downloadURL = await getDownloadURL(storageRef);
+      setMessage("✅ تم رفع الصورة بنجاح");
       
-      console.log('Starting upload of:', file.name, 'to:', storagePath);
-      
-      // Upload the file with metadata
-      const uploadTask = uploadBytes(storageRef, file, metadata);
-      const snapshot = await uploadTask;
-      
-      console.log('Upload completed, getting download URL...');
-      
-      // Get the download URL with cache busting
-      const downloadURL = await getDownloadURL(snapshot.ref);
-      console.log('File uploaded successfully. URL:', downloadURL);
-      
-      // Verify the URL is accessible with CORS headers
-      try {
-        const response = await fetch(downloadURL, { 
-          method: 'HEAD',
-          headers: {
-            'Cache-Control': 'no-cache',
-            'Pragma': 'no-cache'
-          }
-        });
-        
-        if (!response.ok) {
-          console.warn(`Warning: Image URL returned status ${response.status}`);
-        } else {
-          console.log('Image URL is accessible and CORS is properly configured');
-        }
-        
-        return downloadURL;
-      } catch (error) {
-        console.warn('Warning: CORS verification failed, but continuing. Error:', error);
-        // Return the URL anyway as it might still be accessible
-        return downloadURL;
-      }
+      return downloadURL;
     } catch (error) {
       console.error("Error uploading image:", error);
       setMessage("فشل رفع الصورة: " + (error instanceof Error ? error.message : 'حدث خطأ غير معروف'));

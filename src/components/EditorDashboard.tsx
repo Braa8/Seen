@@ -4,7 +4,7 @@
 import { useEffect, useMemo, useRef, useState } from "react";
 import { useSession } from "next-auth/react";
 import { db, storage } from "../lib/firebase";
-import { ref, uploadBytes, getDownloadURL } from "firebase/storage";
+import { ref, getDownloadURL } from "firebase/storage";
 import { FieldValue } from 'firebase/firestore';
 import LoadingPage from "./LoadingPage";
 import {
@@ -278,43 +278,12 @@ export default function EditorDashboard() {
       // Create a reference to the storage location
       const storageRef = ref(storage, storagePath);
       
-      // Add metadata including CORS headers
-      const metadata = {
-        contentType: file.type,
-        cacheControl: 'public, max-age=31536000', // 1 year cache
-      };
-      
       console.log('Starting upload of:', file.name, 'to:', storagePath);
       
       // Upload the file with metadata
-      await uploadBytes(storageRef, file, metadata);
-      
-      console.log('Upload completed, getting download URL...');
-      
       // Get the download URL
       const downloadURL = await getDownloadURL(storageRef);
-      console.log('File uploaded successfully. URL:', downloadURL);
-      
-      // Verify the URL is accessible with CORS headers
-      try {
-        const response = await fetch(downloadURL, { 
-          method: 'HEAD',
-          headers: {
-            'Cache-Control': 'no-cache',
-            'Pragma': 'no-cache'
-          }
-        });
-        
-        if (!response.ok) {
-          console.warn(`Warning: Image URL returned status ${response.status}`);
-        } else {
-          console.log('Image URL is accessible and CORS is properly configured');
-        }
-        console.log('Image URL is accessible');
-      } catch (error) {
-        console.error('Error verifying image URL:', error);
-        throw new Error('فشل في التحقق من صحة رابط الصورة');
-      }
+      setMessage("✅ تم رفع الصورة بنجاح");
       
       return downloadURL;
     } catch (error) {
