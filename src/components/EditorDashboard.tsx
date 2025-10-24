@@ -265,33 +265,72 @@ export default function EditorDashboard() {
   };
 
   const saveEdits = async () => {
-    if (!selectedPost || !editor) return;
+    // التحقق من البيانات المطلوبة
+    if (!selectedPost || !editor) {
+      setMessage("خطأ: لا يوجد منشور محدد للتحرير");
+      return;
+    }
+
+    // تعطيل الزر أثناء الحفظ
     setLoading(true);
+    setMessage("جاري حفظ التعديلات...");
+
     try {
       let uploadedImageUrl = editImageUrl;
+      
+      // رفع الصورة الجديدة إذا وجدت
       if (editImageFile) {
+        setMessage("جاري رفع الصورة...");
         const url = await handleImageUpload(editImageFile);
-        if (url) uploadedImageUrl = url;
+        if (url) {
+          uploadedImageUrl = url;
+        } else {
+          throw new Error("فشل رفع الصورة");
+        }
       }
 
+      // التحقق من المحتوى المطلوب
+      if (!editTitle.trim()) {
+        throw new Error("العنوان مطلوب");
+      }
+
+      if (!editCategory) {
+        throw new Error("يرجى اختيار تصنيف");
+      }
+
+      // تحديث المستند
+      setMessage("جاري حفظ التغييرات...");
       await updateDoc(doc(db, "posts", selectedPost.id), {
-        title: editTitle,
-        excerpt: editExcerpt,
+        title: editTitle.trim(),
+        excerpt: editExcerpt.trim(),
         category: editCategory,
-        image: uploadedImageUrl || undefined,
+        image: uploadedImageUrl || null,
         content: editor.getHTML(),
         updatedAt: serverTimestamp()
       });
-      setMessage("تم حفظ التعديلات ✅");
+
+      // إعادة تعيين الحقول بعد الحفظ الناجح
+      setMessage("تم حفظ التعديلات بنجاح ✅");
       setSelectedPost(null);
+      setEditTitle("");
+      setEditExcerpt("");
+      setEditCategory("");
+      setEditImageUrl("");
       setEditImageFile(null);
       editor.commands.setContent("");
       setEditorContent("");
+
+      // مسح المسودة المحفوظة
       if (typeof window !== "undefined") {
         window.localStorage.removeItem(storageKey);
       }
-    } catch {
-      setMessage("فشل حفظ التعديلات");
+
+      // إخفاء رسالة النجاح بعد 3 ثوانٍ
+      setTimeout(() => setMessage(null), 3000);
+      
+    } catch (error) {
+      console.error("خطأ في حفظ التعديلات:", error);
+      setMessage(`خطأ: ${error instanceof Error ? error.message : 'حدث خطأ غير متوقع'}`);
     } finally {
       setLoading(false);
     }
@@ -438,13 +477,54 @@ export default function EditorDashboard() {
               </div>
             </div>
 
-            <button
-              onClick={saveEdits}
-              disabled={loading}
-              className="w-full bg-purple-600 text-white px-6 py-3 rounded-lg font-semibold hover:bg-purple-700 transition disabled:bg-gray-400"
-            >
-              {loading ? "جارٍ الحفظ..." : "حفظ التعديلات"}
-            </button>
+            <div className="space-y-4">
+              {message && (
+                <div className={`p-3 rounded-lg text-sm font-medium ${message.includes('✅') || message.includes('نجاح') ? 'bg-green-100 text-green-700' : 'bg-red-100 text-red-700'}`}>
+                  {message}
+                </div>
+              )}
+              <button
+                type="button"
+                onClick={saveEdits}
+                disabled={loading || uploadingImage}
+                className={`w-full px-6 py-3 rounded-lg font-semibold transition-colors ${
+                  loading || uploadingImage
+                    ? 'bg-gray-400 cursor-not-allowed'
+                    : 'bg-purple-600 hover:bg-purple-700 text-white'
+                }`}
+              >
+                {uploadingImage ? (
+                  'جاري رفع الصورة...'
+                ) : loading ? (
+                  <span className="flex items-center justify-center gap-2">
+                    <svg className="animate-spin h-5 w-5 text-white" xmlns="http://www.w3.org/2000/svg" fill="none" viewBox="0 0 24 24">
+                      <circle className="opacity-25" cx="12" cy="12" r="10" stroke="currentColor" strokeWidth="4"></circle>
+                      <path className="opacity-75" fill="currentColor" d="M4 12a8 8 0 018-8V0C5.373 0 0 5.373 0 12h4zm2 5.291A7.962 7.962 0 014 12H0c0 3.042 1.135 5.824 3 7.938l3-2.647z"></path>
+                    </svg>
+                    جاري الحفظ...
+                  </span>
+                ) : (
+                  'حفظ التعديلات'
+                )}
+              </button>
+              <button
+                type="button"
+                onClick={() => {
+                  setSelectedPost(null);
+                  setEditTitle("");
+                  setEditExcerpt("");
+                  setEditCategory("");
+                  setEditImageUrl("");
+                  setEditImageFile(null);
+                  editor?.commands.setContent("");
+                  setEditorContent("");
+                  setMessage(null);
+                }}
+                className="w-full px-6 py-3 bg-gray-200 text-gray-700 rounded-lg font-semibold hover:bg-gray-300 transition-colors"
+              >
+                إلغاء
+              </button>
+            </div>
           </div>
         )}
 
