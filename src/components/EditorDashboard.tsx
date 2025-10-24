@@ -618,20 +618,43 @@ export default function EditorDashboard() {
                         sizes="(max-width: 768px) 100vw, 300px"
                         className="object-cover"
                         onError={(e) => {
-                          console.error('Error loading image:', p.image);
                           const target = e.target as HTMLImageElement;
+                          // Check if the source is a blob URL and revoke it to prevent memory leaks
+                          if (target.src.startsWith('blob:')) {
+                            URL.revokeObjectURL(target.src);
+                          }
+                          
+                          // Hide the broken image
                           target.style.display = 'none';
+                          
                           // Show a placeholder if image fails to load
                           const parent = target.parentElement;
-                          if (parent) {
-                            parent.innerHTML = `
-                              <div class="w-full h-full bg-gray-100 flex items-center justify-center">
-                                <span class="text-gray-400 text-sm">فشل تحميل الصورة</span>
+                          if (parent && !parent.querySelector('.image-error-placeholder')) {
+                            const placeholder = document.createElement('div');
+                            placeholder.className = 'w-full h-full bg-gray-100 flex items-center justify-center image-error-placeholder';
+                            placeholder.innerHTML = `
+                              <div class="text-center p-2">
+                                <span class="text-gray-400 text-sm block">فشل تحميل الصورة</span>
+                                <button 
+                                  class="mt-1 text-xs text-red-500 hover:text-red-700"
+                                  onclick="this.closest('.relative').querySelector('img').style.display='none'; this.closest('.relative').querySelector('button').style.display='block'"
+                                >
+                                  إخفاء
+                                </button>
                               </div>
                             `;
+                            parent.appendChild(placeholder);
                           }
                         }}
-                        onLoad={() => console.log('Image loaded successfully:', p.image)}
+                        onLoad={() => {
+                          const target = event?.target as HTMLImageElement;
+                          // If the image is a blob URL, we might want to handle it differently
+                          if (target?.src.startsWith('blob:')) {
+                            console.log('Loaded blob image:', p.image);
+                          } else {
+                            console.log('Image loaded successfully:', p.image);
+                          }
+                        }}
                       />
                     </div>
                   )}
