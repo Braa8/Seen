@@ -317,16 +317,26 @@ export default function EditorDashboard() {
       // رفع الصورة الجديدة إذا وجدت
       if (editImageFile) {
         setMessage("جاري رفع الصورة...");
-        const url = await handleImageUpload(editImageFile);
-        if (url) {
-          uploadedImageUrl = url;
-          console.log('Image uploaded successfully, URL:', url);
-        } else {
-          throw new Error("فشل رفع الصورة");
+        setUploadingImage(true);
+        try {
+          const url = await handleImageUpload(editImageFile);
+          if (url) {
+            uploadedImageUrl = url;
+            console.log('Image uploaded successfully, URL:', url);
+          } else {
+            throw new Error("فشل رفع الصورة: لم يتم الحصول على رابط صالح");
+          }
+        } catch (error) {
+          console.error('Error in image upload:', error);
+          setMessage("حدث خطأ أثناء رفع الصورة");
+          setLoading(false);
+          setUploadingImage(false);
+          return; // Exit early if image upload fails
+        } finally {
+          setUploadingImage(false);
         }
       }
 
-      // التحقق من المحتوى المطلوب
       if (!editTitle.trim()) {
         throw new Error("العنوان مطلوب");
       }

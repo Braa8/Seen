@@ -317,19 +317,27 @@ export default function WriterDashboard({ onPublished }: Props) {
       return;
     }
 
-    try {
-      setLoading(true);
-      setMessage("جاري نشر المنشور...");
+    setLoading(true);
+    setMessage("جاري نشر المنشور...");
 
+    try {
       // Upload image if a new one was selected
       let uploadedImageUrl = imageUrl;
       if (imageFile) {
-        setMessage("جاري رفع الصورة...");
-        const url = await handleImageUpload(imageFile);
-        if (!url) {
-          throw new Error("فشل رفع الصورة. يرجى المحاولة مرة أخرى");
+        setUploadingImage(true);
+        try {
+          const url = await handleImageUpload(imageFile);
+          if (!url) {
+            throw new Error("فشل رفع الصورة: لم يتم الحصول على رابط صالح");
+          }
+          uploadedImageUrl = url;
+        } catch (error) {
+          console.error('Error in image upload:', error);
+          setMessage("حدث خطأ أثناء رفع الصورة");
+          return;
+        } finally {
+          setUploadingImage(false);
         }
-        uploadedImageUrl = url;
       }
 
       // Validate required fields
@@ -342,7 +350,6 @@ export default function WriterDashboard({ onPublished }: Props) {
         throw new Error("محتوى المنشور مطلوب");
       }
 
-      // Create the post data
       // Create the post data
       const postData = {
         authorId: session.user.id,
