@@ -615,32 +615,48 @@ export default function EditorDashboard() {
                       <div className="mt-3">
                         <p className="text-xs text-gray-600 mb-2">معاينة الصورة:</p>
                         <div className="relative w-full h-48 rounded-lg border border-gray-300 overflow-hidden">
-                          <Image
-                            src={p.image}
-                            alt="معاينة الصورة"
-                            fill
-                            className="object-cover"
-                            onError={(e) => {
-                              const target = e.target as HTMLImageElement;
-                              target.style.display = 'none';
-                              const errorDiv = document.createElement('div');
-                              errorDiv.className = 'w-full h-full bg-gray-100 flex items-center justify-center';
-                              const errorContent = document.createElement('div');
-                              errorContent.className = 'text-center p-2';
-                              const errorText = document.createElement('span');
-                              errorText.className = 'text-gray-400 text-sm block';
-                              errorText.textContent = 'تعذر تحميل الصورة';
-                              errorContent.appendChild(errorText);
-                              errorDiv.appendChild(errorContent);
-                              target.parentNode?.insertBefore(errorDiv, target.nextSibling);
-                            }}
-                            onLoad={(e) => {
-                              const target = e.target as HTMLImageElement;
-                              if (target?.src.startsWith('blob:')) {
+                          {p.image.startsWith('blob:') ? (
+                            <Image
+                              src={p.image}
+                              alt="معاينة الصورة"
+                              className="w-full h-full object-cover"
+                              onLoad={(e) => {
+                                const target = e.target as HTMLImageElement;
                                 URL.revokeObjectURL(target.src);
-                              }
-                            }}
-                          />
+                              }}
+                              onError={(e) => {
+                                const target = e.target as HTMLImageElement;
+                                target.style.display = 'none';
+                                const errorDiv = document.createElement('div');
+                                errorDiv.className = 'w-full h-full bg-gray-100 flex items-center justify-center';
+                                errorDiv.innerHTML = `
+                                  <div class="text-center p-2">
+                                    <span class="text-gray-400 text-sm block">تعذر تحميل الصورة</span>
+                                  </div>
+                                `;
+                                target.parentNode?.insertBefore(errorDiv, target.nextSibling);
+                              }}
+                            />
+                          ) : (
+                            <Image
+                              src={p.image}
+                              alt="معاينة الصورة"
+                              fill
+                              className="object-cover"
+                              onError={(e) => {
+                                const target = e.target as HTMLImageElement;
+                                target.style.display = 'none';
+                                const errorDiv = document.createElement('div');
+                                errorDiv.className = 'w-full h-full bg-gray-100 flex items-center justify-center';
+                                errorDiv.innerHTML = `
+                                  <div class="text-center p-2">
+                                    <span class="text-gray-400 text-sm block">تعذر تحميل الصورة</span>
+                                  </div>
+                                `;
+                                target.parentNode?.insertBefore(errorDiv, target.nextSibling);
+                              }}
+                            />
+                          )}
                         </div>
                       </div>
                     </div>
