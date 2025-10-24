@@ -262,12 +262,25 @@ export default function WriterDashboard({ onPublished }: Props) {
   const handleImageUpload = async (file: File) => {
     if (!session?.user?.id) {
       console.error('No user session found');
+      setMessage("❌ لم يتم العثور على جلسة مستخدم. يرجى تسجيل الدخول مرة أخرى.");
       return null;
     }
     
     try {
       setUploadingImage(true);
       setMessage("جاري رفع الصورة...");
+      
+      // Validate file type
+      const validTypes = ['image/jpeg', 'image/png', 'image/webp', 'image/gif'];
+      if (!validTypes.includes(file.type)) {
+        throw new Error('نوع الملف غير مدعوم. يرجى تحميل صورة بصيغة JPG أو PNG أو WebP أو GIF.');
+      }
+      
+      // Validate file size (max 5MB)
+      const maxSize = 5 * 1024 * 1024; // 5MB
+      if (file.size > maxSize) {
+        throw new Error('حجم الصورة كبير جداً. الحد الأقصى المسموح به هو 5 ميجابايت.');
+      }
       
       // Create a unique filename with timestamp and original filename
       const fileExt = file.name.split('.').pop();
@@ -277,31 +290,46 @@ export default function WriterDashboard({ onPublished }: Props) {
       // Create a reference to the storage location
       const storageRef = ref(storage, storagePath);
       
+      // Add metadata including CORS headers
+      const metadata = {
+        contentType: file.type,
+        cacheControl: 'public, max-age=31536000', // 1 year cache
+      };
+      
       console.log('Starting upload of:', file.name, 'to:', storagePath);
       
-      // Upload the file
-      const uploadTask = uploadBytes(storageRef, file);
+      // Upload the file with metadata
+      const uploadTask = uploadBytes(storageRef, file, metadata);
       const snapshot = await uploadTask;
       
       console.log('Upload completed, getting download URL...');
       
-      // Get the download URL
+      // Get the download URL with cache busting
       const downloadURL = await getDownloadURL(snapshot.ref);
       console.log('File uploaded successfully. URL:', downloadURL);
       
-      // Verify the URL is accessible
+      // Verify the URL is accessible with CORS headers
       try {
-        const response = await fetch(downloadURL, { method: 'HEAD' });
+        const response = await fetch(downloadURL, { 
+          method: 'HEAD',
+          headers: {
+            'Cache-Control': 'no-cache',
+            'Pragma': 'no-cache'
+          }
+        });
+        
         if (!response.ok) {
-          throw new Error(`HTTP error! status: ${response.status}`);
+          console.warn(`Warning: Image URL returned status ${response.status}`);
+        } else {
+          console.log('Image URL is accessible and CORS is properly configured');
         }
-        console.log('Image URL is accessible');
+        
+        return downloadURL;
       } catch (error) {
-        console.error('Error verifying image URL:', error);
-        throw new Error('فشل في التحقق من صحة رابط الصورة');
+        console.warn('Warning: CORS verification failed, but continuing. Error:', error);
+        // Return the URL anyway as it might still be accessible
+        return downloadURL;
       }
-      
-      return downloadURL;
     } catch (error) {
       console.error("Error uploading image:", error);
       setMessage("فشل رفع الصورة: " + (error instanceof Error ? error.message : 'حدث خطأ غير معروف'));

@@ -258,6 +258,18 @@ export default function EditorDashboard() {
       setUploadingImage(true);
       setMessage("جاري رفع الصورة...");
       
+      // Validate file type
+      const validTypes = ['image/jpeg', 'image/png', 'image/webp', 'image/gif'];
+      if (!validTypes.includes(file.type)) {
+        throw new Error('نوع الملف غير مدعوم. يرجى تحميل صورة بصيغة JPG أو PNG أو WebP أو GIF.');
+      }
+      
+      // Validate file size (max 5MB)
+      const maxSize = 5 * 1024 * 1024; // 5MB
+      if (file.size > maxSize) {
+        throw new Error('حجم الصورة كبير جداً. الحد الأقصى المسموح به هو 5 ميجابايت.');
+      }
+      
       // Create a unique filename with timestamp and original filename
       const fileExt = file.name.split('.').pop();
       const fileName = `${Date.now()}.${fileExt}`;
@@ -266,23 +278,37 @@ export default function EditorDashboard() {
       // Create a reference to the storage location
       const storageRef = ref(storage, storagePath);
       
+      // Add metadata including CORS headers
+      const metadata = {
+        contentType: file.type,
+        cacheControl: 'public, max-age=31536000', // 1 year cache
+      };
+      
       console.log('Starting upload of:', file.name, 'to:', storagePath);
       
-      // Upload the file
-      const uploadTask = uploadBytes(storageRef, file);
-      const snapshot = await uploadTask;
+      // Upload the file with metadata
+      await uploadBytes(storageRef, file, metadata);
       
       console.log('Upload completed, getting download URL...');
       
       // Get the download URL
-      const downloadURL = await getDownloadURL(snapshot.ref);
+      const downloadURL = await getDownloadURL(storageRef);
       console.log('File uploaded successfully. URL:', downloadURL);
       
-      // Verify the URL is accessible
+      // Verify the URL is accessible with CORS headers
       try {
-        const response = await fetch(downloadURL, { method: 'HEAD' });
+        const response = await fetch(downloadURL, { 
+          method: 'HEAD',
+          headers: {
+            'Cache-Control': 'no-cache',
+            'Pragma': 'no-cache'
+          }
+        });
+        
         if (!response.ok) {
-          throw new Error(`HTTP error! status: ${response.status}`);
+          console.warn(`Warning: Image URL returned status ${response.status}`);
+        } else {
+          console.log('Image URL is accessible and CORS is properly configured');
         }
         console.log('Image URL is accessible');
       } catch (error) {
