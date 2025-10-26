@@ -305,29 +305,67 @@ export default function EditorDashboard() {
   // Functions
   const loadPostForEdit = async (postId: string) => {
     try {
+      console.log('Loading post with ID:', postId);
       const docSnap = await getDoc(doc(db, "posts", postId));
+      
       if (docSnap.exists()) {
         const data = docSnap.data();
+        console.log('Post data:', data);
+        
+        // Clean up content to remove any blob URLs
+        let cleanContent = data.content || "";
+        if (typeof cleanContent === 'string') {
+          // Remove any blob URLs from content
+          cleanContent = cleanContent.replace(/blob:https?:\/\/[^\s"']+/g, '');
+        }
+
         const post: PostData = {
           id: docSnap.id,
           title: data.title || "",
           excerpt: data.excerpt || "",
-          content: data.content || "",
+          content: cleanContent,
           status: data.status || "draft",
           category: data.category || "",
           authorName: data.authorName,
           authorEmail: data.authorEmail
         };
         setSelectedPost(post);
+        // Set form fields
         setEditTitle(post.title);
         setEditExcerpt(post.excerpt);
         setEditCategory(post.category);
-        setEditImageUrl(data.image || "");
-        editor?.commands.setContent(post.content);
-        setEditorContent(post.content);
+        
+        // Handle image URL - make sure it's a valid URL and not a blob
+        const imageUrl = data.image || "";
+        if (imageUrl && imageUrl.startsWith('blob:')) {
+          console.warn('Found blob URL in post image, clearing it');
+          setEditImageUrl("");
+        } else {
+          setEditImageUrl(imageUrl);
+        }
+        
+        // Set editor content
+        if (editor) {
+          try {
+            editor.commands.setContent(cleanContent);
+            setEditorContent(cleanContent);
+          } catch (error) {
+            console.error('Error setting editor content:', error);
+            // Fallback to empty content if there's an error
+            editor.commands.setContent('');
+            setEditorContent('');
+          }
+        }
+        
+        console.log('Post loaded successfully');
+      } else {
+        console.error('Post not found:', postId);
+        setMessage("❌ لم يتم العثور على المنشور");
       }
-    } catch {
-      setMessage("فشل تحميل المنشور");
+    } catch (error) {
+      console.error('Error loading post:', error);
+      const errorMessage = error instanceof Error ? error.message : 'حدث خطأ غير متوقع';
+      setMessage(`❌ فشل تحميل المنشور: ${errorMessage}`);
     }
   };
 
