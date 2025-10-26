@@ -109,12 +109,19 @@ export default function EditorDashboard() {
       const storageRef = ref(storage, storagePath);
       
       try {
-        // Upload the file
-        console.log('Uploading file to Firebase Storage...');
-        const snapshot = await uploadBytes(storageRef, file);
+        // Add metadata to help with CORS
+        const metadata = {
+          contentType: file.type,
+          cacheControl: 'public, max-age=31536000',
+        };
+
+        console.log('Uploading file to Firebase Storage with metadata:', metadata);
+        
+        // Upload the file with metadata
+        const snapshot = await uploadBytes(storageRef, file, metadata);
         console.log('Upload successful, getting download URL...', snapshot);
         
-        // Get the download URL
+        // Get the download URL with token
         const downloadURL = await getDownloadURL(storageRef);
         console.log('Got download URL:', downloadURL);
         
@@ -122,11 +129,29 @@ export default function EditorDashboard() {
           throw new Error('فشل الحصول على رابط الصورة');
         }
         
+        // Ensure the URL is a proper HTTPS URL
+        if (downloadURL.startsWith('http://')) {
+          return downloadURL.replace('http://', 'https://');
+        }
+        
         setMessage("✅ تم رفع الصورة بنجاح");
         return downloadURL;
       } catch (uploadError) {
         console.error("Error in upload process:", uploadError);
-        throw new Error(`فشل رفع الملف: ${uploadError instanceof Error ? uploadError.message : 'خطأ غير معروف'}`);
+        
+        // More detailed error handling
+        let errorMessage = 'خطأ غير معروف';
+        if (uploadError instanceof Error) {
+          if (uploadError.message.includes('cors')) {
+            errorMessage = 'مشكلة في صلاحيات CORS. يرجى التحقق من إعدادات التخزين';
+          } else if (uploadError.message.includes('permission')) {
+            errorMessage = 'لا تملك الصلاحيات الكافية لرفع الملف';
+          } else {
+            errorMessage = uploadError.message;
+          }
+        }
+        
+        throw new Error(`فشل رفع الملف: ${errorMessage}`);
       }
     } catch (error) {
       const errorMessage = error instanceof Error ? error.message : 'حدث خطأ غير معروف';
