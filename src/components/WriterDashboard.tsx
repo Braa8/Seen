@@ -1,24 +1,20 @@
 "use client";
 
-import { useEffect, useMemo, useRef, useState } from "react";
+import { useCallback, useMemo, useState, useEffect } from "react";
 import { useSession } from "next-auth/react";
+import { useDropzone } from 'react-dropzone';
+import { FaCloudUploadAlt, FaBold, FaItalic, FaUnderline, FaLink, FaImage, FaListUl, FaListOl } from "react-icons/fa";
 import { db, storage } from "../lib/firebase";
 import { addDoc, collection, serverTimestamp } from "firebase/firestore";
 import { ref, uploadBytes, getDownloadURL } from "firebase/storage";
-import LoadingPage from "./LoadingPage";
-
-// Tiptap
 import { useEditor, EditorContent } from "@tiptap/react";
 import StarterKit from "@tiptap/starter-kit";
 import Placeholder from "@tiptap/extension-placeholder";
 import ImageExtension from "@tiptap/extension-image";
 import Link from "@tiptap/extension-link";
+import NextImage from "next/image";
 
-// React Icons
-import { FaBold, FaItalic, FaUnderline, FaLink, FaImage, FaListUl, FaListOl } from "react-icons/fa";
-import Image from "next/image";
-
-const DRAFT_TTL_MS = 60 * 60 * 1000;
+const DRAFT_TTL_MS = 24 * 60 * 60 * 1000; // 24 hours
 
 const WRITER_CATEGORIES = [
   "تقنية",
@@ -42,19 +38,14 @@ type Props = {
 
 export default function WriterDashboard({ onPublished }: Props) {
   const { data: session } = useSession();
-  const draftLoadedRef = useRef(false);
   const [title, setTitle] = useState("");
   const [excerpt, setExcerpt] = useState("");
   const [category, setCategory] = useState("تقنية");
   const [imageUrl, setImageUrl] = useState("");
-  const [imageFile, setImageFile] = useState<File | null>(null);
   const [loading, setLoading] = useState(false);
   const [message, setMessage] = useState<string | null>(null);
-  const [uploading, setUploading] = useState(false);
   const [uploadingImage, setUploadingImage] = useState(false);
-  const [pageLoading, setPageLoading] = useState(true);
   const [editorContent, setEditorContent] = useState("");
-
   const storageKey = useMemo(
     () => `writer-draft:${session?.user?.id ?? "guest"}`,
     [session?.user?.id]
@@ -62,205 +53,71 @@ export default function WriterDashboard({ onPublished }: Props) {
   const userName = session?.user?.name || session?.user?.email || "";
   const userEmail = session?.user?.email || "";
 
-  const editor = useEditor({
-    extensions: [
-      StarterKit,
-      Placeholder.configure({ placeholder: "ابدأ بالكتابة هنا..." }),
-      ImageExtension,
-      Link,
-    ],
-    content: "",
-    immediatelyRender: false,
-  });
-
+  // Load draft from localStorage on component mount
   useEffect(() => {
-    const timer = setTimeout(() => {
-      setPageLoading(false);
-    }, 1500);
-    return () => clearTimeout(timer);
-  }, []);
+    if (typeof window !== "undefined") {
+      try {
+        const savedDraft = window.localStorage.getItem(storageKey);
+        if (savedDraft) {
+          const draftData = JSON.parse(savedDraft);
 
-  useEffect(() => {
-    if (!editor) return;
-    const handleUpdate = () => {
-      setEditorContent(editor.getHTML());
-    };
-    setEditorContent(editor.getHTML());
-    editor.on("update", handleUpdate);
-    return () => {
-      if (editor) editor.off("update", handleUpdate);
-    };
-  }, [editor]);
-
-  useEffect(() => {
-    if (!editor || draftLoadedRef.current) return;
-    draftLoadedRef.current = true;
-    try {
-      const raw = window.localStorage.getItem(storageKey);
-      if (!raw) return;
-      const saved = JSON.parse(raw) as {
-        timestamp: number;
-        data?: {
-          title?: string;
-          excerpt?: string;
-          category?: string;
-          imageUrl?: string;
-          content?: string;
-        };
-      };
-      if (!saved?.data) return;
-      if (Date.now() - saved.timestamp > DRAFT_TTL_MS) {
-        window.localStorage.removeItem(storageKey);
-        return;
+          // Check if draft is still valid (not expired)
+          if (Date.now() - draftData.timestamp < DRAFT_TTL_MS) {
+            setTitle(draftData.title || "");
+            setExcerpt(draftData.excerpt || "");
+            setCategory(draftData.category || "تقنية");
+            setImageUrl(draftData.imageUrl || "");
+            setEditorContent(draftData.editorContent || "");
+            setMessage("✅ تم تحميل المسودة المحفوظة");
+          } else {
+            // Clear expired draft
+            window.localStorage.removeItem(storageKey);
+          }
+        }
+      } catch (error) {
+        console.error("Error loading draft:", error);
       }
-      setTitle(saved.data.title ?? "");
-      setExcerpt(saved.data.excerpt ?? "");
-      const savedCategory = saved.data.category;
-      if (savedCategory && WRITER_CATEGORIES.includes(savedCategory)) {
-        setCategory(savedCategory);
-      }
-      const restoredImage = saved.data.imageUrl ?? "";
-      if (restoredImage && !restoredImage.startsWith("blob:")) {
-        setImageUrl(restoredImage);
-      }
-      const restoredContent = saved.data.content ?? "";
-      if (restoredContent) {
-        editor.commands.setContent(restoredContent);
-        setEditorContent(restoredContent);
-      }
-    } catch (error) {
-      console.error("Failed to restore writer draft", error);
     }
-  }, [editor, storageKey]);
+  }, [storageKey]);
 
+  // Save draft to localStorage when content changes
   useEffect(() => {
-    if (typeof window === "undefined") return;
-    const hasData =
-      title.trim() ||
-      excerpt.trim() ||
-      (editorContent && editorContent !== "<p></p>") ||
-      imageUrl;
-    const payload = {
-      timestamp: Date.now(),
-      data: {
+    if (typeof window !== "undefined") {
+      const draftData = {
         title,
         excerpt,
         category,
-        imageUrl: imageUrl.startsWith("blob:") ? "" : imageUrl,
-        content: editorContent,
-      },
-    };
-    const timeout = window.setTimeout(() => {
-      if (!hasData) {
-        window.localStorage.removeItem(storageKey);
-        return;
-      }
-      window.localStorage.setItem(storageKey, JSON.stringify(payload));
-    }, 400);
-    return () => window.clearTimeout(timeout);
+        imageUrl,
+        editorContent,
+        timestamp: Date.now()
+      };
+
+      window.localStorage.setItem(storageKey, JSON.stringify(draftData));
+    }
   }, [title, excerpt, category, imageUrl, editorContent, storageKey]);
 
-  if (pageLoading) {
-    return <LoadingPage />;
-  }
+  // Initialize editor
+  const editor = useEditor({
+    extensions: [
+      StarterKit,
+      Placeholder.configure({
+        placeholder: 'اكتب مقالتك هنا...',
+      }),
+      ImageExtension,
+      Link.configure({
+        openOnClick: false,
+      }),
+    ],
+    content: editorContent,
+    onUpdate: ({ editor }) => {
+      const html = editor.getHTML();
+      setEditorContent(html);
+    },
+  });
 
-  const canPublish =
-    Boolean(session?.user?.id) &&
-    title.trim().length > 0 &&
-    (editor?.getText()?.trim().length ?? 0) > 0;
-
-  // Functions
-  const handleFileUpload = async (event: React.ChangeEvent<HTMLInputElement>) => {
-    const file = event.target.files?.[0];
-    if (!file) return;
-
-    const validTypes = [
-      "application/pdf",
-      "application/msword",
-      "application/vnd.openxmlformats-officedocument.wordprocessingml.document",
-      "text/plain",
-    ];
-
-    if (!validTypes.includes(file.type)) {
-      setMessage("❌ نوع الملف غير مدعوم. يرجى رفع ملف PDF أو Word أو TXT");
-      return;
-    }
-
-    setUploading(true);
-    setMessage("جارٍ معالجة الملف...");
-
-    try {
-      const extension = file.name.split('.').pop()?.toLowerCase() ?? "";
-
-      if (file.type === "text/plain" || extension === "txt") {
-        const textContent = await file.text();
-        editor?.commands.setContent(`<p>${textContent.replace(/\n/g, "</p><p>")}</p>`);
-        setMessage("✅ تم إدراج المحتوى النصي بنجاح!");
-        return;
-      }
-
-      if (extension === "docx") {
-        const arrayBuffer = await file.arrayBuffer();
-        const mammoth = await import("mammoth/mammoth.browser");
-        const { value } = await mammoth.convertToHtml({ arrayBuffer });
-        const html = value?.trim() ? value : "<p></p>";
-        editor?.commands.setContent(html);
-        setMessage("✅ تم استيراد محتوى ملف Word بنجاح!");
-        return;
-      }
-
-      if (extension === "pdf") {
-        const arrayBuffer = await file.arrayBuffer();
-        const pdfjsLib = await import("pdfjs-dist/build/pdf");
-        const pdfWorker = await import("pdfjs-dist/build/pdf.worker.entry");
-        
-        pdfjsLib.GlobalWorkerOptions.workerSrc = pdfWorker;
-        const pdf = await pdfjsLib.getDocument({ data: arrayBuffer }).promise;
-        let extractedText = "";
-        const maxPages = Math.min(pdf.numPages, 10);
-        for (let pageNumber = 1; pageNumber <= maxPages; pageNumber += 1) {
-          const page = await pdf.getPage(pageNumber);
-          const textContent = await page.getTextContent();
-          const textItems = textContent.items as unknown as Array<{ str?: string }>;
-          const pageText = textItems
-            .map((item) => item.str ?? "")
-            .join(" ")
-            .replace(/\s+/g, " ")
-            .trim();
-          if (pageText) {
-            extractedText += pageText + "\n";
-          }
-        }
-        const html = extractedText
-          .split(/\n+/)
-          .filter((paragraph) => paragraph.trim().length > 0)
-          .map((paragraph) => `<p>${paragraph.trim()}</p>`)
-          .join("");
-        editor?.commands.setContent(html || `<p>${file.name}</p>`);
-        setMessage("✅ تم استخراج محتوى ملف PDF (أول 10 صفحات). يرجى مراجعة التنسيق.");
-        return;
-      }
-
-      if (extension === "doc") {
-        const placeholder = `<p>تم رفع الملف <strong>${file.name}</strong>. صيغة DOC قديمة؛ يُنصح بتحويلها إلى DOCX ثم إعادة الرفع لتحسين النتيجة.</p>`;
-        editor?.commands.setContent(placeholder);
-        setMessage("⚠️ تم رفع ملف DOC. يُفضل تحويله إلى DOCX للحصول على استيراد أدق.");
-        return;
-      }
-
-      setMessage("❌ نوع الملف غير مدعوم. يرجى رفع ملف TXT أو PDF أو Word.");
-    } catch (error: unknown) {
-      console.error(error);
-      setMessage("❌ فشل في قراءة الملف");
-    } finally {
-      setUploading(false);
-      event.target.value = "";
-    }
-  };
-
-  const handleImageUpload = async (file: File) => {
+  const uploadImageToStorage = useCallback(async (file: File) => {
     if (!session?.user?.id) {
-      setMessage("❌ يرجى تسجيل الدخول أولاً");
+      setMessage(" ❌ يرجى تسجيل الدخول أولاً");
       return null;
     }
     
@@ -268,94 +125,76 @@ export default function WriterDashboard({ onPublished }: Props) {
       setUploadingImage(true);
       setMessage("جاري رفع الصورة...");
       
-      // التحقق من نوع الملف
-      if (!file.type.startsWith('image/')) {
-        throw new Error('الرجاء رفع ملف صورة صالح (JPG, PNG, GIF)');
-      }
+      const storageRef = ref(storage, `posts/${session.user.id}/${Date.now()}-${file.name}`);
+      const snapshot = await uploadBytes(storageRef, file);
+      const downloadURL = await getDownloadURL(snapshot.ref);
       
-      // التحقق من حجم الملف (5 ميجابايت كحد أقصى)
-      if (file.size > 5 * 1024 * 1024) {
-        throw new Error('حجم الصورة كبير جداً. الحد الأقصى 5 ميجابايت');
-      }
-      
-      // إنشاء اسم فريد للملف
-      const fileExt = file.name.split('.').pop();
-      const fileName = `${Date.now()}.${fileExt}`;
-      const storagePath = `post-images/${session.user.id}/${fileName}`;
-      
-      // رفع الملف
-      const storageRef = ref(storage, storagePath);
-      
-      try {
-        // رفع الملف أولاً
-        await uploadBytes(storageRef, file);
-        
-        // ثم الحصول على رابط التحميل
-        const downloadURL = await getDownloadURL(storageRef);
-        setMessage("✅ تم رفع الصورة بنجاح");
-        return downloadURL;
-      } catch (error) {
-        console.error("حدث خطأ أثناء رفع الملف:", error);
-        throw error; // إعادة رمي الخطأ للتعامل معه في catch الخارجي
-      }
+      setMessage("✅ تم رفع الصورة بنجاح");
+      return downloadURL;
     } catch (error) {
       console.error("Error uploading image:", error);
-      setMessage("فشل رفع الصورة: " + (error instanceof Error ? error.message : 'حدث خطأ غير معروف'));
+      setMessage("❌ فشل رفع الصورة");
       return null;
     } finally {
       setUploadingImage(false);
     }
-  };
+  }, [session?.user?.id]);
 
-  const handlePublish = async () => {
-    if (!editor || !session?.user?.id) {
-      setMessage("خطأ: لم يتم العثور على بيانات المستخدم");
+  const handleFileUpload = useCallback(async (file: File) => {
+    const imageUrl = await uploadImageToStorage(file);
+    if (imageUrl && editor) {
+      editor.chain().focus().setImage({ src: imageUrl }).run();
+      setImageUrl(imageUrl);
+    }
+  }, [editor, uploadImageToStorage]);
+
+  // Configure dropzone
+  const onDrop = useCallback((acceptedFiles: File[]) => {
+    const file = acceptedFiles[0];
+    if (file) {
+      handleFileUpload(file);
+    }
+  }, [handleFileUpload]);
+
+  const { getRootProps, getInputProps, isDragActive } = useDropzone({
+    onDrop,
+    accept: {
+      'image/*': ['.jpeg', '.jpg', '.png', '.webp', '.gif']
+    },
+    maxFiles: 1,
+    multiple: false,
+  });
+
+  const handleFileInputChange = useCallback((event: React.ChangeEvent<HTMLInputElement>) => {
+    const file = event.target.files?.[0];
+    if (file) {
+      handleFileUpload(file);
+    }
+  }, [handleFileUpload]);
+
+  const canPublish = useMemo(() => {
+    return title.trim() && editor?.getText().trim();
+  }, [title, editor]);
+
+  const handlePublish = useCallback(async () => {
+    if (!canPublish || !session?.user?.id) {
+      setMessage("❌ يرجى إكمال البيانات المطلوبة");
       return;
     }
 
-    setLoading(true);
-    setMessage("جاري نشر المنشور...");
-
     try {
-      // Upload image if a new one was selected
-      let uploadedImageUrl = imageUrl;
-      if (imageFile) {
-        setUploadingImage(true);
-        try {
-          const url = await handleImageUpload(imageFile);
-          if (!url) {
-            throw new Error("فشل رفع الصورة: لم يتم الحصول على رابط صالح");
-          }
-          uploadedImageUrl = url;
-        } catch (error) {
-          console.error('Error in image upload:', error);
-          setMessage("حدث خطأ أثناء رفع الصورة");
-          return;
-        } finally {
-          setUploadingImage(false);
-        }
-      }
+      setLoading(true);
+      setMessage("جاري نشر المقال...");
 
-      // Validate required fields
-      if (!title.trim()) {
-        throw new Error("العنوان مطلوب");
-      }
-
-      const content = editor.getHTML();
-      if (!content || content === '<p></p>') {
-        throw new Error("محتوى المنشور مطلوب");
-      }
-
-      // Create the post data
       const postData = {
         authorId: session.user.id,
         authorEmail: userEmail,
         authorName: userName,
         title: title.trim(),
-        excerpt: excerpt.trim() || editor.getText().substring(0, 150) + "...",
-        content: content,
+        excerpt: excerpt.trim() || editor?.getText().substring(0, 150) + "..." || "",
+        content: editorContent,
         category,
-        image: uploadedImageUrl || null,
+        image: imageUrl || null,
         createdAt: serverTimestamp(),
         updatedAt: serverTimestamp(),
         status: "draft"
@@ -370,8 +209,9 @@ export default function WriterDashboard({ onPublished }: Props) {
       setExcerpt("");
       setCategory("تقنية");
       setImageUrl("");
-      setImageFile(null);
-      editor.commands.setContent("");
+      if (editor) {
+        editor.commands.setContent("");
+      }
       setEditorContent("");
       
       // Clear draft from local storage
@@ -387,9 +227,15 @@ export default function WriterDashboard({ onPublished }: Props) {
     } finally {
       setLoading(false);
     }
-  };
+  }, [canPublish, session?.user?.id, userEmail, userName, title, excerpt, editor, editorContent, category, imageUrl, storageKey, onPublished]);
 
-  if (!session) return <p>جاري تحميل بيانات المستخدم...</p>;
+  if (!session) {
+    return (
+      <div className="min-h-screen flex items-center justify-center">
+        <p>جاري تحميل بيانات المستخدم...</p>
+      </div>
+    );
+  }
 
   return (
     <div className="min-h-screen bg-gradient-to-br from-gray-50 to-blue-50 py-8">
@@ -440,66 +286,38 @@ export default function WriterDashboard({ onPublished }: Props) {
 
           <div>
             <label className="block text-sm font-medium text-gray-700 mb-2">صورة المقال (اختياري)</label>
-            <input
-              placeholder="اختر صورة للمقال"
-              type="file"
-              accept="image/*"
-              className="w-full border border-black p-3 rounded-lg focus:outline-none focus:ring-2 focus:ring-blue-500"
-              onChange={async (e) => {
-                const file = e.target.files?.[0];
-                if (file) {
-                  setImageFile(file);
-                  // Create a blob URL for preview
-                  const blobUrl = URL.createObjectURL(file);
-                  setImageUrl(blobUrl);
-                  
-                  // Clean up the blob URL when component unmounts or when a new image is selected
-                  return () => {
-                    URL.revokeObjectURL(blobUrl);
-                  };
-                } else {
-                  setImageUrl('');
-                  setImageFile(null);
-                }
-              }}
-            />
-            {uploadingImage && <p className="text-sm text-blue-600 mt-2">جارٍ رفع الصورة...</p>}
-            {imageUrl && (
-              <div className="mt-3">
-                <p className="text-xs text-gray-600 mb-2">معاينة الصورة:</p>
-                <div className="relative w-full h-48 rounded-lg border border-gray-300 overflow-hidden bg-gray-100">
-                  <div className="w-full h-full relative">
-                    <Image
-                      src={imageUrl}
-                      alt="معاينة الصورة"
-                      fill
-                      className="object-cover"
-                      onError={(event) => {
-                        const target = event.target as HTMLImageElement;
-                        target.style.display = 'none';
-                        const parent = target.parentElement;
-                        if (parent && !parent.querySelector('.image-error-placeholder')) {
-                          const errorDiv = document.createElement('div');
-                          errorDiv.className = 'absolute inset-0 flex items-center justify-center bg-gray-100';
-                          errorDiv.innerHTML = `
-                            <div class="text-center p-2">
-                              <span class="text-gray-400 text-sm">تعذر تحميل الصورة</span>
-                            </div>
-                          `;
-                          parent.appendChild(errorDiv);
-                        }
-                      }}
-                      onLoad={() => {
-                        // Don't revoke the URL here as we need it for the preview
-                      }}
-                    />
+            <div
+              {...getRootProps()}
+              className={`border-2 border-dashed rounded-lg p-6 text-center cursor-pointer hover:border-blue-500 transition-colors ${
+                isDragActive ? 'border-blue-500 bg-blue-50' : 'border-gray-300'
+              }`}
+            >
+              <input {...getInputProps()} />
+              {imageUrl ? (
+                <div className="relative w-full h-48 rounded-lg overflow-hidden">
+                  <NextImage
+                    src={imageUrl}
+                    alt="معاينة الصورة"
+                    fill
+                    className="object-cover"
+                  />
+                  <div className="absolute inset-0 bg-black bg-opacity-30 flex items-center justify-center opacity-0 hover:opacity-100 transition-opacity">
+                    <FaCloudUploadAlt className="text-white text-2xl" />
+                    <span className="text-white mr-2">تغيير الصورة</span>
                   </div>
-                  {uploadingImage && (
-                    <div className="absolute inset-0 flex items-center justify-center bg-black bg-opacity-20">
-                      <div className="w-10 h-10 border-4 border-white border-t-blue-500 rounded-full animate-spin"></div>
-                    </div>
-                  )}
                 </div>
+              ) : (
+                <div className="space-y-2">
+                  <FaCloudUploadAlt className="mx-auto text-3xl text-gray-400" />
+                  <p className="text-sm text-gray-600">انقر لرفع صورة</p>
+                  <p className="text-xs text-gray-400">JPEG, PNG, WEBP, GIF (الحد الأقصى: 5MB)</p>
+                </div>
+              )}
+            </div>
+            {uploadingImage && (
+              <div className="flex items-center justify-center py-2">
+                <div className="w-5 h-5 border-2 border-blue-500 border-t-transparent rounded-full animate-spin mr-2"></div>
+                <span className="text-sm text-blue-600">جاري رفع الصورة...</span>
               </div>
             )}
           </div>
@@ -565,11 +383,11 @@ export default function WriterDashboard({ onPublished }: Props) {
                 <input
                   type="file"
                   accept=".txt,.pdf,.doc,.docx,application/pdf,application/msword,application/vnd.openxmlformats-officedocument.wordprocessingml.document"
-                  onChange={handleFileUpload}
-                  disabled={uploading}
+                  onChange={handleFileInputChange}
+                  disabled={uploadingImage}
                   className="hidden"
                 />
-                📄 {uploading ? "جارٍ الرفع..." : "رفع ملف"}
+                📄 {uploadingImage ? "جارٍ الرفع..." : "رفع ملف"}
               </label>
             </div>
 

@@ -1,12 +1,11 @@
 
 "use client";
 
-import { useEffect, useMemo, useRef, useState } from "react";
+import { useCallback, useEffect, useMemo, useRef, useState } from "react";
 import { useSession } from "next-auth/react";
 import { db, storage } from "../lib/firebase";
 import { ref, getDownloadURL, uploadBytes } from "firebase/storage";
 import { FieldValue } from 'firebase/firestore';
-import LoadingPage from "./LoadingPage";
 import {
   collection,
   deleteDoc,
@@ -24,7 +23,8 @@ import StarterKit from "@tiptap/starter-kit";
 import Placeholder from "@tiptap/extension-placeholder";
 import ImageExtension from "@tiptap/extension-image";
 import Link from "@tiptap/extension-link";
-import { FaBold, FaItalic, FaUnderline, FaLink, FaImage, FaListUl, FaListOl } from "react-icons/fa";
+import { useDropzone } from 'react-dropzone';
+import { FaBold, FaItalic, FaUnderline, FaLink, FaImage, FaListUl, FaListOl, FaCloudUploadAlt } from "react-icons/fa";
 import Image from "next/image";
 
 const DRAFT_TTL_MS = 60 * 60 * 1000;
@@ -68,13 +68,82 @@ export default function EditorDashboard() {
   const [editCategory, setEditCategory] = useState("");
   const [editImageUrl, setEditImageUrl] = useState("");
   const [editImageFile, setEditImageFile] = useState<File | null>(null);
-  const [loading, setLoading] = useState(false);
+  const [loading, setLoading] = useState(true); // Initialize as true to show loading state by default
   const [uploadingImage, setUploadingImage] = useState(false);
-  const [pageLoading, setPageLoading] = useState(true);
   const [editorContent, setEditorContent] = useState("");
   const draftLoadedRef = useRef(false);
 
   const storageKey = `editor-draft:${session?.user?.id ?? "guest"}`;
+
+  const handleImageUpload = useCallback(async (file: File) => {
+    if (!session?.user?.id) {
+      console.error('No user session found');
+      return null;
+    }
+
+    try {
+      setUploadingImage(true);
+      setMessage("جاري رفع الصورة...");
+
+      // Validate file type
+      const validTypes = ['image/jpeg', 'image/png', 'image/webp', 'image/gif'];
+      if (!validTypes.includes(file.type)) {
+        throw new Error('نوع الملف غير مدعوم. يرجى تحميل صورة بصيغة JPG أو PNG أو WebP أو GIF.');
+      }
+
+      // Validate file size (max 5MB)
+      const maxSize = 5 * 1024 * 1024; // 5MB
+      if (file.size > maxSize) {
+        throw new Error('حجم الصورة كبير جداً. الحد الأقصى المسموح به هو 5 ميجابايت.');
+      }
+
+      // Create a unique filename with timestamp and original filename
+      const fileExt = file.name.split('.').pop();
+      const fileName = `${Date.now()}.${fileExt}`;
+      const storagePath = `post-images/${session.user.id}/${fileName}`;
+
+      // Create a reference to the storage location
+      const storageRef = ref(storage, storagePath);
+
+      console.log('Starting upload of:', file.name, 'to:', storagePath);
+
+      try {
+        // First, upload the file
+        await uploadBytes(storageRef, file);
+
+        // Then get the download URL
+        const downloadURL = await getDownloadURL(storageRef);
+        setMessage("✅ تم رفع الصورة بنجاح");
+        return downloadURL;
+      } catch (error) {
+        console.error("Error in upload process:", error);
+        throw error; // Re-throw to be caught by the outer catch block
+      }
+    } catch (error) {
+      console.error("Error uploading image:", error);
+      setMessage("فشل رفع الصورة: " + (error instanceof Error ? error.message : 'حدث خطأ غير معروف'));
+      return null;
+    } finally {
+      setUploadingImage(false);
+    }
+  }, [session?.user?.id]);
+
+  // Configure dropzone
+  const onDrop = useCallback((acceptedFiles: File[]) => {
+    const file = acceptedFiles[0];
+    if (file) {
+      handleImageUpload(file);
+    }
+  }, [handleImageUpload]);
+
+  const { getRootProps, getInputProps, isDragActive } = useDropzone({
+    onDrop,
+    accept: {
+      'image/*': ['.jpeg', '.jpg', '.png', '.webp', '.gif']
+    },
+    maxFiles: 1,
+    multiple: false
+  });
 
   const editor = useEditor({
     extensions: [
@@ -89,7 +158,7 @@ export default function EditorDashboard() {
 
   useEffect(() => {
     const timer = setTimeout(() => {
-      setPageLoading(false);
+      setLoading(false);
     }, 1500);
     return () => clearTimeout(timer);
   }, []);
@@ -213,8 +282,12 @@ export default function EditorDashboard() {
     return () => window.clearTimeout(timeout);
   }, [selectedPost, editTitle, editExcerpt, editCategory, editImageUrl, editorContent, storageKey]);
 
-  if (pageLoading) {
-    return <LoadingPage />;
+  if (loading) {
+    return (
+      <div className="min-h-screen flex items-center justify-center">
+        <div className="animate-spin rounded-full h-12 w-12 border-t-2 border-b-2 border-purple-500"></div>
+      </div>
+    );
   }
 
   const canModerate = Array.isArray(session?.user?.roles) && (session!.user.roles.includes("editor") || session!.user.roles.includes("admin"));
@@ -248,59 +321,6 @@ export default function EditorDashboard() {
     }
   };
 
-  const handleImageUpload = async (file: File) => {
-    if (!session?.user?.id) {
-      console.error('No user session found');
-      return null;
-    }
-    
-    try {
-      setUploadingImage(true);
-      setMessage("جاري رفع الصورة...");
-      
-      // Validate file type
-      const validTypes = ['image/jpeg', 'image/png', 'image/webp', 'image/gif'];
-      if (!validTypes.includes(file.type)) {
-        throw new Error('نوع الملف غير مدعوم. يرجى تحميل صورة بصيغة JPG أو PNG أو WebP أو GIF.');
-      }
-      
-      // Validate file size (max 5MB)
-      const maxSize = 5 * 1024 * 1024; // 5MB
-      if (file.size > maxSize) {
-        throw new Error('حجم الصورة كبير جداً. الحد الأقصى المسموح به هو 5 ميجابايت.');
-      }
-      
-      // Create a unique filename with timestamp and original filename
-      const fileExt = file.name.split('.').pop();
-      const fileName = `${Date.now()}.${fileExt}`;
-      const storagePath = `post-images/${session.user.id}/${fileName}`;
-      
-      // Create a reference to the storage location
-      const storageRef = ref(storage, storagePath);
-      
-      console.log('Starting upload of:', file.name, 'to:', storagePath);
-      
-      try {
-        // First, upload the file
-        await uploadBytes(storageRef, file);
-        
-        // Then get the download URL
-        const downloadURL = await getDownloadURL(storageRef);
-        setMessage("✅ تم رفع الصورة بنجاح");
-        return downloadURL;
-      } catch (error) {
-        console.error("Error in upload process:", error);
-        throw error; // Re-throw to be caught by the outer catch block
-      }
-    } catch (error) {
-      console.error("Error uploading image:", error);
-      setMessage("فشل رفع الصورة: " + (error instanceof Error ? error.message : 'حدث خطأ غير معروف'));
-      return null;
-    } finally {
-      setUploadingImage(false);
-    }
-  };
-
   const saveEdits = async () => {
     // التحقق من البيانات المطلوبة
     if (!selectedPost || !editor) {
@@ -314,7 +334,7 @@ export default function EditorDashboard() {
 
     try {
       let uploadedImageUrl = editImageUrl;
-      
+
       // رفع الصورة الجديدة إذا وجدت
       if (editImageFile) {
         setMessage("جاري رفع الصورة...");
@@ -372,7 +392,7 @@ export default function EditorDashboard() {
       }
 
       console.log('Updating post with data:', updateData);
-      
+
       await updateDoc(doc(db, "posts", selectedPost.id), updateData);
 
       // إعادة تعيين الحقول بعد الحفظ الناجح
@@ -393,7 +413,7 @@ export default function EditorDashboard() {
 
       // إخفاء رسالة النجاح بعد 3 ثوانٍ
       setTimeout(() => setMessage(null), 3000);
-      
+
     } catch (error) {
       console.error("خطأ في حفظ التعديلات:", error);
       setMessage(`خطأ: ${error instanceof Error ? error.message : 'حدث خطأ غير متوقع'}`);
@@ -487,62 +507,38 @@ export default function EditorDashboard() {
 
             <div>
               <label className="block text-sm font-medium text-gray-700 mb-2">صورة المقال (اختياري)</label>
-              <input
-                type="file"
-                accept="image/*"
-                className="w-full border border-gray-300 p-3 rounded-lg focus:outline-none focus:ring-2 focus:ring-purple-500"
-                onChange={async (e) => {
-                  const file = e.target.files?.[0];
-                  if (file) {
-                    // Clean up previous blob URL if it exists
-                    if (editImageUrl && editImageUrl.startsWith('blob:')) {
-                      URL.revokeObjectURL(editImageUrl);
-                    }
-                    setEditImageFile(file);
-                    // Create a new blob URL for preview
-                    const blobUrl = URL.createObjectURL(file);
-                    setEditImageUrl(blobUrl);
-                  } else {
-                    setEditImageUrl('');
-                    setEditImageFile(null);
-                  }
-                }}
-              />
-              {uploadingImage && <p className="text-sm text-blue-600 mt-2">جارٍ رفع الصورة...</p>}
-              {editImageUrl && (
-                <div className="mt-3">
-                  <p className="text-xs text-gray-600 mb-2">معاينة الصورة:</p>
-                  <div className="relative w-full h-48 rounded-lg border border-gray-300 overflow-hidden bg-gray-100">
+              <div
+                {...getRootProps()}
+                className={`border-2 border-dashed rounded-lg p-6 text-center cursor-pointer hover:border-purple-500 transition-colors ${
+                  isDragActive ? 'border-purple-500 bg-purple-50' : 'border-gray-300'
+                }`}
+              >
+                <input {...getInputProps()} />
+                {editImageUrl ? (
+                  <div className="relative w-full h-48 rounded-lg overflow-hidden">
                     <Image
                       src={editImageUrl}
                       alt="معاينة الصورة"
                       fill
                       className="object-cover"
-                      onError={(event) => {
-                        const target = event.target as HTMLImageElement;
-                        target.style.display = 'none';
-                        const parent = target.parentElement;
-                        if (parent && !parent.querySelector('.image-error-placeholder')) {
-                          const errorDiv = document.createElement('div');
-                          errorDiv.className = 'absolute inset-0 flex items-center justify-center bg-gray-100';
-                          errorDiv.innerHTML = `
-                            <div class="text-center p-2">
-                              <span class="text-gray-400 text-sm">تعذر تحميل الصورة</span>
-                            </div>
-                          `;
-                          parent.appendChild(errorDiv);
-                        }
-                      }}
-                      onLoad={() => {
-                        // Don't revoke the URL here as we need it for the preview
-                      }}
                     />
-                    {uploadingImage && (
-                      <div className="absolute inset-0 flex items-center justify-center bg-black bg-opacity-20">
-                        <div className="w-10 h-10 border-4 border-white border-t-blue-500 rounded-full animate-spin"></div>
-                      </div>
-                    )}
+                    <div className="absolute inset-0 bg-black bg-opacity-30 flex items-center justify-center opacity-0 hover:opacity-100 transition-opacity">
+                      <FaCloudUploadAlt className="text-white text-2xl" />
+                      <span className="text-white mr-2">تغيير الصورة</span>
+                    </div>
                   </div>
+                ) : (
+                  <div className="space-y-2">
+                    <FaCloudUploadAlt className="mx-auto text-3xl text-gray-400" />
+                    <p className="text-sm text-gray-600">انقر لرفع صورة</p>
+                    <p className="text-xs text-gray-400">JPEG, PNG, WEBP, GIF (الحد الأقصى: 5MB)</p>
+                  </div>
+                )}
+              </div>
+              {uploadingImage && (
+                <div className="flex items-center justify-center py-2">
+                  <div className="w-5 h-5 border-2 border-purple-500 border-t-transparent rounded-full animate-spin mr-2"></div>
+                  <span className="text-sm text-purple-600">جاري رفع الصورة...</span>
                 </div>
               )}
             </div>
@@ -752,5 +748,4 @@ export default function EditorDashboard() {
     </div>
   );
 }
-
 
