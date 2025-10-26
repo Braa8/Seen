@@ -78,12 +78,13 @@ export default function EditorDashboard() {
   const handleImageUpload = useCallback(async (file: File) => {
     if (!session?.user?.id) {
       console.error('No user session found');
+      setMessage("❌ لم يتم العثور على جلسة مستخدم");
       return null;
     }
 
     try {
       setUploadingImage(true);
-      setMessage("جاري رفع الصورة...");
+      setMessage("🔄 جاري رفع الصورة...");
 
       // Validate file type
       const validTypes = ['image/jpeg', 'image/png', 'image/webp', 'image/gif'];
@@ -98,30 +99,39 @@ export default function EditorDashboard() {
       }
 
       // Create a unique filename with timestamp and original filename
-      const fileExt = file.name.split('.').pop();
-      const fileName = `${Date.now()}.${fileExt}`;
+      const fileExt = file.name.split('.').pop()?.toLowerCase();
+      const fileName = `img_${Date.now()}.${fileExt}`;
       const storagePath = `post-images/${session.user.id}/${fileName}`;
 
+      console.log('Starting upload of:', file.name, 'to path:', storagePath);
+      
       // Create a reference to the storage location
       const storageRef = ref(storage, storagePath);
-
-      console.log('Starting upload of:', file.name, 'to:', storagePath);
-
+      
       try {
-        // First, upload the file
-        await uploadBytes(storageRef, file);
-
-        // Then get the download URL
+        // Upload the file
+        console.log('Uploading file to Firebase Storage...');
+        const snapshot = await uploadBytes(storageRef, file);
+        console.log('Upload successful, getting download URL...', snapshot);
+        
+        // Get the download URL
         const downloadURL = await getDownloadURL(storageRef);
+        console.log('Got download URL:', downloadURL);
+        
+        if (!downloadURL) {
+          throw new Error('فشل الحصول على رابط الصورة');
+        }
+        
         setMessage("✅ تم رفع الصورة بنجاح");
         return downloadURL;
-      } catch (error) {
-        console.error("Error in upload process:", error);
-        throw error; // Re-throw to be caught by the outer catch block
+      } catch (uploadError) {
+        console.error("Error in upload process:", uploadError);
+        throw new Error(`فشل رفع الملف: ${uploadError instanceof Error ? uploadError.message : 'خطأ غير معروف'}`);
       }
     } catch (error) {
+      const errorMessage = error instanceof Error ? error.message : 'حدث خطأ غير معروف';
       console.error("Error uploading image:", error);
-      setMessage("فشل رفع الصورة: " + (error instanceof Error ? error.message : 'حدث خطأ غير معروف'));
+      setMessage(`❌ فشل رفع الصورة: ${errorMessage}`);
       return null;
     } finally {
       setUploadingImage(false);
