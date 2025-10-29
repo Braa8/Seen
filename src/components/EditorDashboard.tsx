@@ -23,9 +23,9 @@ import StarterKit from "@tiptap/starter-kit";
 import Placeholder from "@tiptap/extension-placeholder";
 import ImageExtension from "@tiptap/extension-image";
 import Link from "@tiptap/extension-link";
-import { useDropzone } from 'react-dropzone';
-import { FaBold, FaItalic, FaUnderline, FaLink, FaImage, FaListUl, FaListOl, FaCloudUploadAlt } from "react-icons/fa";
+import { FaBold, FaItalic, FaUnderline, FaLink, FaImage, FaListUl, FaListOl } from "react-icons/fa";
 import Image from "next/image";
+import ImageUploader from "./common/ImageUploader";
 
 const DRAFT_TTL_MS = 60 * 60 * 1000;
 
@@ -68,14 +68,14 @@ export default function EditorDashboard() {
   const [editCategory, setEditCategory] = useState("");
   const [editImageUrl, setEditImageUrl] = useState("");
   const [editImageFile, setEditImageFile] = useState<File | null>(null);
-  const [loading, setLoading] = useState(true); // Initialize as true to show loading state by default
-  const [uploadingImage, setUploadingImage] = useState(false);
+  const [loading, setLoading] = useState(true);
+  const [isUploading, setIsUploading] = useState(false);
   const [editorContent, setEditorContent] = useState("");
   const draftLoadedRef = useRef(false);
 
   const storageKey = `editor-draft:${session?.user?.id ?? "guest"}`;
 
-  const handleImageUpload = useCallback(async (file: File) => {
+  const handleImageUpload = useCallback(async (file: File): Promise<string | null> => {
     if (!session?.user?.id) {
       console.error('No user session found');
       setMessage("❌ لم يتم العثور على جلسة مستخدم");
@@ -83,7 +83,7 @@ export default function EditorDashboard() {
     }
 
     try {
-      setUploadingImage(true);
+      setIsUploading(true);
       setMessage("🔄 جاري رفع الصورة...");
 
       // Validate file type
@@ -102,83 +102,38 @@ export default function EditorDashboard() {
       const fileExt = file.name.split('.').pop()?.toLowerCase();
       const fileName = `img_${Date.now()}.${fileExt}`;
       const storagePath = `post-images/${session.user.id}/${fileName}`;
-
-      console.log('Starting upload of:', file.name, 'to path:', storagePath);
       
       // Create a reference to the storage location
       const storageRef = ref(storage, storagePath);
       
-      try {
-        // Add metadata to help with CORS
-        const metadata = {
-          contentType: file.type,
-          cacheControl: 'public, max-age=31536000',
-        };
+      // Add metadata to help with CORS
+      const metadata = {
+        contentType: file.type,
+        cacheControl: 'public, max-age=31536000',
+      };
 
-        console.log('Uploading file to Firebase Storage with metadata:', metadata);
-        
-        // Upload the file with metadata
-        const snapshot = await uploadBytes(storageRef, file, metadata);
-        console.log('Upload successful, getting download URL...', snapshot);
-        
-        // Get the download URL with token
-        const downloadURL = await getDownloadURL(storageRef);
-        console.log('Got download URL:', downloadURL);
-        
-        if (!downloadURL) {
-          throw new Error('فشل الحصول على رابط الصورة');
-        }
-        
-        // Ensure the URL is a proper HTTPS URL
-        if (downloadURL.startsWith('http://')) {
-          return downloadURL.replace('http://', 'https://');
-        }
-        
-        setMessage("✅ تم رفع الصورة بنجاح");
-        return downloadURL;
-      } catch (uploadError) {
-        console.error("Error in upload process:", uploadError);
-        
-        // More detailed error handling
-        let errorMessage = 'خطأ غير معروف';
-        if (uploadError instanceof Error) {
-          if (uploadError.message.includes('cors')) {
-            errorMessage = 'مشكلة في صلاحيات CORS. يرجى التحقق من إعدادات التخزين';
-          } else if (uploadError.message.includes('permission')) {
-            errorMessage = 'لا تملك الصلاحيات الكافية لرفع الملف';
-          } else {
-            errorMessage = uploadError.message;
-          }
-        }
-        
-        throw new Error(`فشل رفع الملف: ${errorMessage}`);
+      // Upload the file with metadata (snapshot is not used but kept for future reference)
+      // eslint-disable-next-line @typescript-eslint/no-unused-vars
+      const snapshot = await uploadBytes(storageRef, file, metadata);
+      
+      // Get the download URL with token
+      const downloadURL = await getDownloadURL(storageRef);
+      
+      if (!downloadURL) {
+        throw new Error('فشل الحصول على رابط الصورة');
       }
+      
+      setMessage("✅ تم رفع الصورة بنجاح");
+      return downloadURL;
     } catch (error) {
       const errorMessage = error instanceof Error ? error.message : 'حدث خطأ غير معروف';
       console.error("Error uploading image:", error);
       setMessage(`❌ فشل رفع الصورة: ${errorMessage}`);
       return null;
     } finally {
-      setUploadingImage(false);
+      setIsUploading(false);
     }
   }, [session?.user?.id]);
-
-  // Configure dropzone
-  const onDrop = useCallback((acceptedFiles: File[]) => {
-    const file = acceptedFiles[0];
-    if (file) {
-      handleImageUpload(file);
-    }
-  }, [handleImageUpload]);
-
-  const { getRootProps, getInputProps, isDragActive } = useDropzone({
-    onDrop,
-    accept: {
-      'image/*': ['.jpeg', '.jpg', '.png', '.webp', '.gif']
-    },
-    maxFiles: 1,
-    multiple: false
-  });
 
   const editor = useEditor({
     extensions: [
@@ -411,12 +366,11 @@ export default function EditorDashboard() {
       // رفع الصورة الجديدة إذا وجدت
       if (editImageFile) {
         setMessage("جاري رفع الصورة...");
-        setUploadingImage(true);
+        setIsUploading(true);
         try {
           const url = await handleImageUpload(editImageFile);
           if (url) {
             uploadedImageUrl = url;
-            console.log('Image uploaded successfully, URL:', url);
           } else {
             throw new Error("فشل رفع الصورة: لم يتم الحصول على رابط صالح");
           }
@@ -424,10 +378,10 @@ export default function EditorDashboard() {
           console.error('Error in image upload:', error);
           setMessage("حدث خطأ أثناء رفع الصورة");
           setLoading(false);
-          setUploadingImage(false);
+          setIsUploading(false);
           return; // Exit early if image upload fails
         } finally {
-          setUploadingImage(false);
+          setIsUploading(false);
         }
       }
 
@@ -580,58 +534,108 @@ export default function EditorDashboard() {
 
             <div>
               <label className="block text-sm font-medium text-gray-700 mb-2">صورة المقال (اختياري)</label>
-              <div
-                {...getRootProps()}
-                className={`border-2 border-dashed rounded-lg p-6 text-center cursor-pointer hover:border-purple-500 transition-colors ${
-                  isDragActive ? 'border-purple-500 bg-purple-50' : 'border-gray-300'
-                }`}
-              >
-                <input {...getInputProps()} />
-                {editImageUrl ? (
-                  <div className="relative w-full h-48 rounded-lg overflow-hidden">
-                    <Image
-                      src={editImageUrl}
-                      alt="معاينة الصورة"
-                      fill
-                      className="object-cover"
-                    />
-                    <div className="absolute inset-0 bg-black bg-opacity-30 flex items-center justify-center opacity-0 hover:opacity-100 transition-opacity">
-                      <FaCloudUploadAlt className="text-white text-2xl" />
-                      <span className="text-white mr-2">تغيير الصورة</span>
-                    </div>
-                  </div>
-                ) : (
-                  <div className="space-y-2">
-                    <FaCloudUploadAlt className="mx-auto text-3xl text-gray-400" />
-                    <p className="text-sm text-gray-600">انقر لرفع صورة</p>
-                    <p className="text-xs text-gray-400">JPEG, PNG, WEBP, GIF (الحد الأقصى: 5MB)</p>
-                  </div>
-                )}
-              </div>
-              {uploadingImage && (
-                <div className="flex items-center justify-center py-2">
-                  <div className="w-5 h-5 border-2 border-purple-500 border-t-transparent rounded-full animate-spin mr-2"></div>
-                  <span className="text-sm text-purple-600">جاري رفع الصورة...</span>
-                </div>
-              )}
+              <ImageUploader 
+                onImageUpload={async (file: File) => {
+                  try {
+                    const url = await handleImageUpload(file);
+                    if (url) {
+                      setEditImageUrl(url);
+                      return url;
+                    }
+                    return '';
+                  } catch (error) {
+                    const errorMessage = error instanceof Error ? error.message : 'حدث خطأ غير معروف';
+                    setMessage(`❌ ${errorMessage}`);
+                    throw error;
+                  }
+                }}
+                initialImage={editImageUrl}
+              />
             </div>
 
             <div>
               <label className="block text-sm font-medium text-gray-700 mb-2">أدوات التنسيق</label>
-              <div className="flex gap-2 mb-3 flex-wrap">
-                <button onClick={() => editor?.chain().focus().toggleBold().run()} className="border border-gray-300 p-2 rounded-lg hover:bg-gray-100"><FaBold /></button>
-                <button onClick={() => editor?.chain().focus().toggleItalic().run()} className="border border-gray-300 p-2 rounded-lg hover:bg-gray-100"><FaItalic /></button>
-                <button onClick={() => editor?.chain().focus().toggleUnderline().run()} className="border border-gray-300 p-2 rounded-lg hover:bg-gray-100"><FaUnderline /></button>
-                <button onClick={() => {
-                  const url = prompt("أدخل رابط:");
-                  if (url) editor?.chain().focus().setLink({ href: url }).run();
-                }} className="border border-gray-300 p-2 rounded-lg hover:bg-gray-100"><FaLink /></button>
-                <button onClick={() => {
-                  const url = prompt("أدخل رابط الصورة:");
-                  if (url) editor?.chain().focus().setImage({ src: url }).run();
-                }} className="border border-gray-300 p-2 rounded-lg hover:bg-gray-100"><FaImage /></button>
-                <button onClick={() => editor?.chain().focus().toggleBulletList().run()} className="border border-gray-300 p-2 rounded-lg hover:bg-gray-100"><FaListUl /></button>
-                <button onClick={() => editor?.chain().focus().toggleOrderedList().run()} className="border border-gray-300 p-2 rounded-lg hover:bg-gray-100"><FaListOl /></button>
+              <div className="flex gap-2 mb-3 flex-wrap bg-gray-50 p-2 rounded-lg border border-gray-200">
+                <button
+                  type="button"
+                  onClick={() => editor?.chain().focus().toggleBold().run()}
+                  className={`p-2 rounded hover:bg-gray-200 ${
+                    editor?.isActive('bold') ? 'bg-gray-200' : ''
+                  }`}
+                  title="عريض"
+                >
+                  <FaBold />
+                </button>
+                <button
+                  type="button"
+                  onClick={() => editor?.chain().focus().toggleItalic().run()}
+                  className={`p-2 rounded hover:bg-gray-200 ${
+                    editor?.isActive('italic') ? 'bg-gray-200' : ''
+                  }`}
+                  title="مائل"
+                >
+                  <FaItalic />
+                </button>
+                <button
+                  type="button"
+                  onClick={() => editor?.chain().focus().toggleUnderline().run()}
+                  className={`p-2 rounded hover:bg-gray-200 ${
+                    editor?.isActive('underline') ? 'bg-gray-200' : ''
+                  }`}
+                  title="تحته خط"
+                >
+                  <FaUnderline />
+                </button>
+                <div className="w-px bg-gray-300 mx-1"></div>
+                <button
+                  type="button"
+                  onClick={() => {
+                    const url = window.prompt('أدخل رابط URL:');
+                    if (url) {
+                      editor?.chain().focus().setLink({ href: url }).run();
+                    }
+                  }}
+                  className={`p-2 rounded hover:bg-gray-200 ${
+                    editor?.isActive('link') ? 'bg-gray-200' : ''
+                  }`}
+                  title="إضافة رابط"
+                >
+                  <FaLink />
+                </button>
+                <button
+                  type="button"
+                  onClick={() => {
+                    const url = window.prompt('أدخل رابط الصورة:');
+                    if (url) {
+                      editor?.chain().focus().setImage({ src: url }).run();
+                    }
+                  }}
+                  className="p-2 rounded hover:bg-gray-200"
+                  title="إدراج صورة"
+                >
+                  <FaImage />
+                </button>
+                <div className="w-px bg-gray-300 mx-1"></div>
+                <button
+                  type="button"
+                  onClick={() => editor?.chain().focus().toggleBulletList().run()}
+                  className={`p-2 rounded hover:bg-gray-200 ${
+                    editor?.isActive('bulletList') ? 'bg-gray-200' : ''
+                  }`}
+                  title="قائمة نقطية"
+                >
+                  <FaListUl />
+                </button>
+                <button
+                  type="button"
+                  onClick={() => editor?.chain().focus().toggleOrderedList().run()}
+                  className={`p-2 rounded hover:bg-gray-200 ${
+                    editor?.isActive('orderedList') ? 'bg-gray-200' : ''
+                  }`}
+                  title="قائمة رقمية"
+                >
+                  <FaListOl />
+                </button>
               </div>
             </div>
 
@@ -651,14 +655,14 @@ export default function EditorDashboard() {
               <button
                 type="button"
                 onClick={saveEdits}
-                disabled={loading || uploadingImage}
+                disabled={loading || isUploading}
                 className={`w-full px-6 py-3 rounded-lg font-semibold transition-colors ${
-                  loading || uploadingImage
+                  loading || isUploading
                     ? 'bg-gray-400 cursor-not-allowed'
                     : 'bg-purple-600 hover:bg-purple-700 text-white'
                 }`}
               >
-                {uploadingImage ? (
+                {isUploading ? (
                   'جاري رفع الصورة...'
                 ) : loading ? (
                   <span className="flex items-center justify-center gap-2">
@@ -784,6 +788,17 @@ export default function EditorDashboard() {
                       className="px-3 py-1.5 bg-blue-600 text-white rounded-md hover:bg-blue-700 transition text-sm font-medium flex items-center gap-1"
                     >
                       <span>✏️</span> تعديل
+                    </button>
+                    <button
+                      onClick={() => {
+                        if (p.image) {
+                          setEditImageUrl(p.image);
+                        }
+                        loadPostForEdit(p.id);
+                      }}
+                      className="px-3 py-1.5 bg-purple-600 text-white rounded-md hover:bg-purple-700 transition text-sm font-medium flex items-center gap-1"
+                    >
+                      <span>🖼️</span> تعديل مع الصورة
                     </button>
                     {p.status === "published" ? (
                       <button

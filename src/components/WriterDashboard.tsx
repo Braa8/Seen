@@ -1,9 +1,8 @@
 "use client";
 
-import { useCallback, useMemo, useState, useEffect } from "react";
+import { useMemo, useState, useEffect } from "react";
 import { useSession } from "next-auth/react";
-import { useDropzone } from 'react-dropzone';
-import { FaCloudUploadAlt, FaBold, FaItalic, FaUnderline, FaLink, FaImage, FaListUl, FaListOl } from "react-icons/fa";
+import { FaBold, FaItalic, FaUnderline, FaLink, FaImage, FaListUl, FaListOl } from "react-icons/fa";
 import { db, storage } from "../lib/firebase";
 import { addDoc, collection, serverTimestamp } from "firebase/firestore";
 import { ref, uploadBytes, getDownloadURL } from "firebase/storage";
@@ -12,7 +11,7 @@ import StarterKit from "@tiptap/starter-kit";
 import Placeholder from "@tiptap/extension-placeholder";
 import ImageExtension from "@tiptap/extension-image";
 import Link from "@tiptap/extension-link";
-import NextImage from "next/image";
+import ImageUploader from "./common/ImageUploader";
 
 const DRAFT_TTL_MS = 24 * 60 * 60 * 1000; // 24 hours
 
@@ -42,16 +41,16 @@ export default function WriterDashboard({ onPublished }: Props) {
   const [excerpt, setExcerpt] = useState("");
   const [category, setCategory] = useState("تقنية");
   const [imageUrl, setImageUrl] = useState("");
+  const [imageFile, setImageFile] = useState<File | null>(null);
   const [loading, setLoading] = useState(false);
   const [message, setMessage] = useState<string | null>(null);
-  const [uploadingImage, setUploadingImage] = useState(false);
+  const [isUploading, setIsUploading] = useState(false);
   const [editorContent, setEditorContent] = useState("");
+
   const storageKey = useMemo(
     () => `writer-draft:${session?.user?.id ?? "guest"}`,
     [session?.user?.id]
   );
-  const userName = session?.user?.name || session?.user?.email || "";
-  const userEmail = session?.user?.email || "";
 
   // Load draft from localStorage on component mount
   useEffect(() => {
@@ -60,7 +59,6 @@ export default function WriterDashboard({ onPublished }: Props) {
         const savedDraft = window.localStorage.getItem(storageKey);
         if (savedDraft) {
           const draftData = JSON.parse(savedDraft);
-
           // Check if draft is still valid (not expired)
           if (Date.now() - draftData.timestamp < DRAFT_TTL_MS) {
             setTitle(draftData.title || "");
@@ -68,10 +66,8 @@ export default function WriterDashboard({ onPublished }: Props) {
             setCategory(draftData.category || "تقنية");
             setImageUrl(draftData.imageUrl || "");
             setEditorContent(draftData.editorContent || "");
-            setMessage("✅ تم تحميل المسودة المحفوظة");
           } else {
-            // Clear expired draft
-            window.localStorage.removeItem(storageKey);
+            localStorage.removeItem(storageKey);
           }
         }
       } catch (error) {
@@ -91,7 +87,6 @@ export default function WriterDashboard({ onPublished }: Props) {
         editorContent,
         timestamp: Date.now()
       };
-
       window.localStorage.setItem(storageKey, JSON.stringify(draftData));
     }
   }, [title, excerpt, category, imageUrl, editorContent, storageKey]);
@@ -115,119 +110,131 @@ export default function WriterDashboard({ onPublished }: Props) {
     },
   });
 
-  const uploadImageToStorage = useCallback(async (file: File) => {
+  const handleImageUpload = async (file: File): Promise<string> => {
     if (!session?.user?.id) {
-      setMessage(" ❌ يرجى تسجيل الدخول أولاً");
-      return null;
+      throw new Error('No user session found');
     }
-    
+
     try {
-      setUploadingImage(true);
-      setMessage("جاري رفع الصورة...");
+      setIsUploading(true);
+      setMessage("🔄 جاري رفع الصورة...");
+
+      // Create a unique filename with timestamp and original filename
+      const fileExt = file.name.split('.').pop()?.toLowerCase();
+      const fileName = `img_${Date.now()}.${fileExt}`;
+      const storagePath = `post-images/${session.user.id}/${fileName}`;
+
+      // Create a reference to the storage location
+      const storageRef = ref(storage, storagePath);
       
-      const storageRef = ref(storage, `posts/${session.user.id}/${Date.now()}-${file.name}`);
-      const snapshot = await uploadBytes(storageRef, file);
-      const downloadURL = await getDownloadURL(snapshot.ref);
+      // Add metadata to help with CORS and caching
+      const metadata = {
+        contentType: file.type,
+        cacheControl: 'public, max-age=31536000',
+      };
+
+      // Upload the file with metadata
+      // Upload the file with metadata (snapshot is not used but kept for future reference)
+    // eslint-disable-next-line @typescript-eslint/no-unused-vars
+    const snapshot = await uploadBytes(storageRef, file, metadata);
       
+      // Get the download URL with token
+      const downloadURL = await getDownloadURL(storageRef);
+      
+      if (!downloadURL) {
+        throw new Error('Failed to get image URL');
+      }
+      
+      // Update the image URL and file
+      setImageUrl(downloadURL);
+      setImageFile(file);
       setMessage("✅ تم رفع الصورة بنجاح");
+      
       return downloadURL;
     } catch (error) {
       console.error("Error uploading image:", error);
-      setMessage("❌ فشل رفع الصورة");
-      return null;
+      
+      // More detailed error handling
+      let errorMessage = 'Unknown error';
+      if (error instanceof Error) {
+        if (error.message.includes('cors')) {
+          errorMessage = 'CORS issue. Please check storage settings';
+        } else if (error.message.includes('permission')) {
+          errorMessage = 'Insufficient permissions to upload file';
+        } else {
+          errorMessage = error.message;
+        }
+      }
+      
+      throw new Error(`Failed to upload file: ${errorMessage}`);
     } finally {
-      setUploadingImage(false);
+      setIsUploading(false);
     }
-  }, [session?.user?.id]);
+  };
 
-  const handleFileUpload = useCallback(async (file: File) => {
-    const imageUrl = await uploadImageToStorage(file);
-    if (imageUrl && editor) {
-      editor.chain().focus().setImage({ src: imageUrl }).run();
-      setImageUrl(imageUrl);
-    }
-  }, [editor, uploadImageToStorage]);
+  const handleSubmit = async (e: React.FormEvent): Promise<void> => {
+    e.preventDefault();
 
-  // Configure dropzone
-  const onDrop = useCallback((acceptedFiles: File[]) => {
-    const file = acceptedFiles[0];
-    if (file) {
-      handleFileUpload(file);
-    }
-  }, [handleFileUpload]);
-
-  const { getRootProps, getInputProps, isDragActive } = useDropzone({
-    onDrop,
-    accept: {
-      'image/*': ['.jpeg', '.jpg', '.png', '.webp', '.gif']
-    },
-    maxFiles: 1,
-    multiple: false,
-  });
-
-  const handleFileInputChange = useCallback((event: React.ChangeEvent<HTMLInputElement>) => {
-    const file = event.target.files?.[0];
-    if (file) {
-      handleFileUpload(file);
-    }
-  }, [handleFileUpload]);
-
-  const canPublish = useMemo(() => {
-    return title.trim() && editor?.getText().trim();
-  }, [title, editor]);
-
-  const handlePublish = useCallback(async () => {
-    if (!canPublish || !session?.user?.id) {
-      setMessage("❌ يرجى إكمال البيانات المطلوبة");
+    if (!session?.user) {
+      setMessage("❌ يجب تسجيل الدخول أولاً");
       return;
     }
 
-    try {
-      setLoading(true);
-      setMessage("جاري نشر المقال...");
+    if (!title.trim() || !excerpt.trim() || !editorContent.trim()) {
+      setMessage("❌ الرجاء تعبئة جميع الحقول المطلوبة");
+      return;
+    }
 
+    // If there's an image file but no URL, it means it's still uploading
+    if (imageFile && !imageUrl) {
+      setMessage("🔄 جاري رفع الصورة، الرجاء الانتظار...");
+      return;
+    }
+
+    setLoading(true);
+    setMessage("جاري نشر المنشور...");
+
+    try {
+      // Save to Firestore
       const postData = {
-        authorId: session.user.id,
-        authorEmail: userEmail,
-        authorName: userName,
         title: title.trim(),
-        excerpt: excerpt.trim() || editor?.getText().substring(0, 150) + "..." || "",
+        excerpt: excerpt.trim(),
         content: editorContent,
         category,
-        image: imageUrl || null,
+        status: "pending" as const,
+        authorName: session.user.name || "مستخدم مجهول",
+        authorEmail: session.user.email || "",
         createdAt: serverTimestamp(),
         updatedAt: serverTimestamp(),
-        status: "draft"
+        ...(imageUrl && { image: imageUrl }), // Only include if imageUrl exists
       };
 
-      // Add the post to Firestore
       const docRef = await addDoc(collection(db, "posts"), postData);
 
-      // Reset form
-      setMessage("تم حفظ المسودة بنجاح 📝 - سيتم مراجعتها من قبل المحرر");
+      // Clear the form
       setTitle("");
       setExcerpt("");
-      setCategory("تقنية");
       setImageUrl("");
-      if (editor) {
-        editor.commands.setContent("");
-      }
+      setImageFile(null);
+      editor?.commands.setContent("");
       setEditorContent("");
-      
-      // Clear draft from local storage
-      if (typeof window !== "undefined") {
-        window.localStorage.removeItem(storageKey);
-      }
+
+      // Clear the draft
+      localStorage.removeItem(storageKey);
+
+      setMessage("✅ تم إرسال المنشور بنجاح في انتظار المراجعة");
       
       // Notify parent component if needed
-      onPublished?.(docRef.id);
+      if (onPublished) {
+        onPublished(docRef.id);
+      }
     } catch (error) {
-      console.error(error);
-      setMessage("فشل الحفظ. حاول مرة أخرى.");
+      console.error("Error adding document: ", error);
+      setMessage(`❌ حدث خطأ أثناء محاولة نشر المنشور: ${error instanceof Error ? error.message : 'خطأ غير معروف'}`);
     } finally {
       setLoading(false);
     }
-  }, [canPublish, session?.user?.id, userEmail, userName, title, excerpt, editor, editorContent, category, imageUrl, storageKey, onPublished]);
+  };
 
   if (!session) {
     return (
@@ -238,23 +245,20 @@ export default function WriterDashboard({ onPublished }: Props) {
   }
 
   return (
-    <div className="min-h-screen bg-gradient-to-br from-gray-50 to-blue-50 py-8">
-      <div className="max-w-5xl mx-auto px-4 space-y-6">
-        <div className="bg-white rounded-xl shadow-lg p-6">
-          <h1 className="text-3xl font-bold text-gray-800 mb-2">✍️ لوحة الكاتب</h1>
-          <p className="text-gray-600">مرحباً {userName}</p>
-        </div>
-
-        <div className="bg-white rounded-xl shadow-lg p-6 space-y-4">
-          <h2 className="text-xl font-semibold text-gray-800 mb-4">إنشاء منشور جديد</h2>
-
+    <div className="min-h-screen bg-gray-50 py-8 px-4 sm:px-6 lg:px-8">
+      <div className="max-w-4xl mx-auto">
+        <h2 className="text-2xl font-bold text-gray-900 mb-8 text-right">إنشاء منشور جديد</h2>
+        
+        <form onSubmit={handleSubmit} className="space-y-6">
           <div>
             <label className="block text-sm font-medium text-gray-700 mb-2">عنوان المقال *</label>
             <input
+              type="text"
               className="w-full border border-gray-300 p-3 rounded-lg focus:outline-none focus:ring-2 focus:ring-blue-500"
-              placeholder=" أدخل عنوان المقال (حقل مطلوب) "
+              placeholder="أدخل عنوان المقال (حقل مطلوب)"
               value={title}
               onChange={(e) => setTitle(e.target.value)}
+              required
             />
           </div>
 
@@ -262,7 +266,7 @@ export default function WriterDashboard({ onPublished }: Props) {
             <label className="block text-sm font-medium text-gray-700 mb-2">المقتطف (اختياري)</label>
             <textarea
               className="w-full border border-gray-300 p-3 rounded-lg focus:outline-none focus:ring-2 focus:ring-blue-500"
-              placeholder="ملخص قصير للمقال (سيتم إنشاؤه تلقائياً إذا تركته فارغاً)"
+              placeholder="اكتب ملخصاً مختصراً للمقال"
               rows={3}
               value={excerpt}
               onChange={(e) => setExcerpt(e.target.value)}
@@ -270,11 +274,12 @@ export default function WriterDashboard({ onPublished }: Props) {
           </div>
 
           <div>
-            <label className="block text-sm font-medium text-gray-700 mb-2">القسم *</label>
+            <label className="block text-sm font-medium text-gray-700 mb-2">التصنيف *</label>
             <select
-              className="w-full border border-gray-300 p-3 rounded-lg focus:outline-none focus:ring-2 focus:ring-blue-500 bg-white"
+              className="w-full border border-gray-300 p-3 rounded-lg focus:outline-none focus:ring-2 focus:ring-blue-500"
               value={category}
               onChange={(e) => setCategory(e.target.value)}
+              required
             >
               {WRITER_CATEGORIES.map((cat) => (
                 <option key={cat} value={cat}>
@@ -284,115 +289,109 @@ export default function WriterDashboard({ onPublished }: Props) {
             </select>
           </div>
 
-          <div>
-            <label className="block text-sm font-medium text-gray-700 mb-2">صورة المقال (اختياري)</label>
-            <div
-              {...getRootProps()}
-              className={`border-2 border-dashed rounded-lg p-6 text-center cursor-pointer hover:border-blue-500 transition-colors ${
-                isDragActive ? 'border-blue-500 bg-blue-50' : 'border-gray-300'
-              }`}
-            >
-              <input {...getInputProps()} />
-              {imageUrl ? (
-                <div className="relative w-full h-48 rounded-lg overflow-hidden">
-                  <NextImage
-                    src={imageUrl}
-                    alt="معاينة الصورة"
-                    fill
-                    className="object-cover"
-                  />
-                  <div className="absolute inset-0 bg-black bg-opacity-30 flex items-center justify-center opacity-0 hover:opacity-100 transition-opacity">
-                    <FaCloudUploadAlt className="text-white text-2xl" />
-                    <span className="text-white mr-2">تغيير الصورة</span>
-                  </div>
-                </div>
-              ) : (
-                <div className="space-y-2">
-                  <FaCloudUploadAlt className="mx-auto text-3xl text-gray-400" />
-                  <p className="text-sm text-gray-600">انقر لرفع صورة</p>
-                  <p className="text-xs text-gray-400">JPEG, PNG, WEBP, GIF (الحد الأقصى: 5MB)</p>
-                </div>
-              )}
-            </div>
-            {uploadingImage && (
-              <div className="flex items-center justify-center py-2">
-                <div className="w-5 h-5 border-2 border-blue-500 border-t-transparent rounded-full animate-spin mr-2"></div>
-                <span className="text-sm text-blue-600">جاري رفع الصورة...</span>
-              </div>
-            )}
-          </div>
-
-          <div>
-            <label className="block text-sm font-medium text-gray-700 mb-2">أدوات التنسيق</label>
-            <div className="flex gap-2 mb-3 flex-wrap">
-              <button
-                onClick={() => editor?.chain().focus().toggleBold().run()}
-                className="border border-gray-300 p-2 rounded-lg hover:bg-gray-100 transition"
-              >
-                <FaBold />
-              </button>
-              <button
-                onClick={() => editor?.chain().focus().toggleItalic().run()}
-                className="border border-gray-300 p-2 rounded-lg hover:bg-gray-100 transition"
-              >
-                <FaItalic />
-              </button>
-              <button
-                onClick={() => editor?.chain().focus().toggleUnderline().run()}
-                className="border border-gray-300 p-2 rounded-lg hover:bg-gray-100 transition"
-              >
-                <FaUnderline />
-              </button>
-              <button
-                onClick={() => {
-                  const url = prompt("أدخل رابط:");
-                  if (url) editor?.chain().focus().setLink({ href: url }).run();
-                }}
-                className="border border-gray-300 p-2 rounded-lg hover:bg-gray-100 transition"
-              >
-                <FaLink />
-              </button>
-              <button
-                onClick={() => {
-                  const url = prompt("أدخل رابط الصورة:");
-                  if (url) editor?.chain().focus().setImage({ src: url }).run();
-                }}
-                className="border border-gray-300 p-2 rounded-lg hover:bg-gray-100 transition"
-              >
-                <FaImage />
-              </button>
-              <button
-                onClick={() => editor?.chain().focus().toggleBulletList().run()}
-                className="border border-gray-300 p-2 rounded-lg hover:bg-gray-100 transition"
-              >
-                <FaListUl />
-              </button>
-              <button
-                onClick={() => editor?.chain().focus().toggleOrderedList().run()}
-                className="border border-gray-300 p-2 rounded-lg hover:bg-gray-100 transition"
-              >
-                <FaListOl />
-              </button>
-            </div>
+          <div className="space-y-2">
+            <label className="block text-sm font-medium text-gray-700">
+              صورة المنشور (اختياري)
+            </label>
+            <ImageUploader 
+              onImageUpload={handleImageUpload}
+              previewClassName="max-w-full"
+              initialImage={imageUrl}
+            />
           </div>
 
           <div>
             <div className="flex items-center justify-between mb-2">
               <label className="block text-sm font-medium text-gray-700">محتوى المقال *</label>
-              <label className="cursor-pointer px-4 py-2 bg-purple-600 text-white rounded-lg hover:bg-purple-700 transition text-sm font-semibold flex items-center gap-2">
-                <input
-                  type="file"
-                  accept=".txt,.pdf,.doc,.docx,application/pdf,application/msword,application/vnd.openxmlformats-officedocument.wordprocessingml.document"
-                  onChange={handleFileInputChange}
-                  disabled={uploadingImage}
-                  className="hidden"
-                />
-                📄 {uploadingImage ? "جارٍ الرفع..." : "رفع ملف"}
-              </label>
             </div>
 
             <div className="bg-yellow-50 border border-yellow-200 rounded-lg p-3 mb-3 text-xs text-yellow-800">
               💡 <strong>نصيحة:</strong> يمكنك رفع ملف نصي أو Word أو PDF لإدراج المحتوى تلقائياً، أو الكتابة مباشرة في المحرر أدناه.
+            </div>
+
+            <div className="mb-4">
+              <div className="flex gap-2 flex-wrap bg-gray-50 p-2 rounded-lg border border-gray-200">
+                <button
+                  type="button"
+                  onClick={() => editor?.chain().focus().toggleBold().run()}
+                  className={`p-2 rounded hover:bg-gray-200 ${
+                    editor?.isActive('bold') ? 'bg-gray-200' : ''
+                  }`}
+                  title="عريض"
+                >
+                  <FaBold />
+                </button>
+                <button
+                  type="button"
+                  onClick={() => editor?.chain().focus().toggleItalic().run()}
+                  className={`p-2 rounded hover:bg-gray-200 ${
+                    editor?.isActive('italic') ? 'bg-gray-200' : ''
+                  }`}
+                  title="مائل"
+                >
+                  <FaItalic />
+                </button>
+                <button
+                  type="button"
+                  onClick={() => editor?.chain().focus().toggleUnderline().run()}
+                  className={`p-2 rounded hover:bg-gray-200 ${
+                    editor?.isActive('underline') ? 'bg-gray-200' : ''
+                  }`}
+                  title="تحته خط"
+                >
+                  <FaUnderline />
+                </button>
+                <div className="w-px bg-gray-300 mx-1"></div>
+                <button
+                  type="button"
+                  onClick={() => {
+                    const url = window.prompt('أدخل رابط URL:');
+                    if (url) {
+                      editor?.chain().focus().setLink({ href: url }).run();
+                    }
+                  }}
+                  className={`p-2 rounded hover:bg-gray-200 ${
+                    editor?.isActive('link') ? 'bg-gray-200' : ''
+                  }`}
+                  title="إضافة رابط"
+                >
+                  <FaLink />
+                </button>
+                <button
+                  type="button"
+                  onClick={() => {
+                    const url = window.prompt('أدخل رابط الصورة:');
+                    if (url) {
+                      editor?.chain().focus().setImage({ src: url }).run();
+                    }
+                  }}
+                  className="p-2 rounded hover:bg-gray-200"
+                  title="إدراج صورة"
+                >
+                  <FaImage />
+                </button>
+                <div className="w-px bg-gray-300 mx-1"></div>
+                <button
+                  type="button"
+                  onClick={() => editor?.chain().focus().toggleBulletList().run()}
+                  className={`p-2 rounded hover:bg-gray-200 ${
+                    editor?.isActive('bulletList') ? 'bg-gray-200' : ''
+                  }`}
+                  title="قائمة نقطية"
+                >
+                  <FaListUl />
+                </button>
+                <button
+                  type="button"
+                  onClick={() => editor?.chain().focus().toggleOrderedList().run()}
+                  className={`p-2 rounded hover:bg-gray-200 ${
+                    editor?.isActive('orderedList') ? 'bg-gray-200' : ''
+                  }`}
+                  title="قائمة رقمية"
+                >
+                  <FaListOl />
+                </button>
+              </div>
             </div>
 
             <div className="border border-gray-300 rounded-lg p-4 min-h-[300px] focus-within:ring-2 focus-within:ring-blue-500">
@@ -407,11 +406,15 @@ export default function WriterDashboard({ onPublished }: Props) {
           </div>
 
           <button
-            disabled={!canPublish || loading}
-            onClick={handlePublish}
-            className="w-full bg-blue-600 text-white px-6 py-3 rounded-lg font-semibold hover:cursor-pointer hover:bg-blue-700 transition disabled:bg-gray-400 disabled:cursor-not-allowed"
+            type="submit"
+            disabled={loading || isUploading}
+            className={`inline-flex items-center px-6 py-3 border border-transparent text-base font-medium rounded-md shadow-sm text-white ${
+              loading || isUploading
+                ? 'bg-gray-400 cursor-not-allowed'
+                : 'bg-green-600 hover:bg-green-700'
+            } focus:outline-none focus:ring-2 focus:ring-offset-2 focus:ring-green-500`}
           >
-            {loading ? "جارٍ الحفظ..." : "حفظ كمسودة"}
+            {loading ? 'جاري النشر...' : isUploading ? 'جاري رفع الصورة...' : 'إرسال للنشر'}
           </button>
 
           {message && (
@@ -423,7 +426,7 @@ export default function WriterDashboard({ onPublished }: Props) {
               {message}
             </div>
           )}
-        </div>
+        </form>
       </div>
     </div>
   );
