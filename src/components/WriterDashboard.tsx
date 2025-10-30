@@ -110,44 +110,58 @@ export default function WriterDashboard({ onPublished }: Props) {
     },
   });
 
-  const handleImageUpload = async (file: File): Promise<string> => {
+  const handleImageUpload = async (base64Image: string): Promise<string> => {
     if (!session?.user?.id) {
-      throw new Error('No user session found');
+      const errorMsg = '❌ لم يتم العثور على جلسة مستخدم';
+      console.error(errorMsg);
+      setMessage(errorMsg);
+      throw new Error(errorMsg);
     }
 
     try {
       setIsUploading(true);
-      setMessage("🔄 جاري رفع الصورة...");
+      setMessage('🔄 جاري حفظ الصورة...');
 
-      // Create a unique filename with timestamp and original filename
-      const fileExt = file.name.split('.').pop()?.toLowerCase();
+      // Convert base64 to blob for Firebase Storage
+      const response = await fetch(base64Image);
+      const blob = await response.blob();
+      
+      // Validate file type
+      const validTypes = ['image/jpeg', 'image/png', 'image/webp', 'image/gif'];
+      if (!validTypes.includes(blob.type)) {
+        throw new Error('نوع الملف غير مدعوم. يرجى تحميل صورة بصيغة JPG أو PNG أو WebP أو GIF.');
+      }
+
+      // Validate file size (max 5MB)
+      const maxSize = 5 * 1024 * 1024; // 5MB
+      if (blob.size > maxSize) {
+        throw new Error('حجم الصورة كبير جداً. الحد الأقصى المسموح به هو 5 ميجابايت.');
+      }
+
+      const fileExt = blob.type.split('/')[1] || 'png';
       const fileName = `img_${Date.now()}.${fileExt}`;
       const storagePath = `post-images/${session.user.id}/${fileName}`;
-
-      // Create a reference to the storage location
       const storageRef = ref(storage, storagePath);
       
-      // Add metadata to help with CORS and caching
+      // Upload to Firebase Storage with metadata
       const metadata = {
-        contentType: file.type,
+        contentType: blob.type,
         cacheControl: 'public, max-age=31536000',
+        customMetadata: {
+          uploadedBy: session.user.id,
+          uploadedAt: new Date().toISOString(),
+          source: 'writer-dashboard'
+        }
       };
 
-      // Upload the file with metadata
-      // Upload the file with metadata (snapshot is not used but kept for future reference)
-    // eslint-disable-next-line @typescript-eslint/no-unused-vars
-    const snapshot = await uploadBytes(storageRef, file, metadata);
-      
-      // Get the download URL with token
-      const downloadURL = await getDownloadURL(storageRef);
-      
+      const snapshot = await uploadBytes(storageRef, blob, metadata);
+      const downloadURL = await getDownloadURL(snapshot.ref);
+
       if (!downloadURL) {
-        throw new Error('Failed to get image URL');
+        throw new Error('فشل الحصول على رابط الصورة');
       }
-      
-      // Update the image URL and file
-      setImageUrl(downloadURL);
-      setImageFile(file);
+
+      setMessage('✅ تم حفظ الصورة بنجاح');
       setMessage("✅ تم رفع الصورة بنجاح");
       
       return downloadURL;
