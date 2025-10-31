@@ -1,24 +1,98 @@
 "use client";
 
-import { useEffect, useMemo, useRef, useState } from "react";
+import { useEffect, useMemo, useRef, useState, useCallback } from "react";
 import { useSession } from "next-auth/react";
 import { db, storage } from "../lib/firebase";
 import { collection, doc, onSnapshot, orderBy, query, updateDoc, where } from "firebase/firestore";
 import { getDownloadURL, ref, uploadBytes } from "firebase/storage";
 import { motion } from "motion/react";
 import LoadingPage from "./LoadingPage";
+import Image from "next/image";
+import type { Session } from "next-auth";
+
+// Custom hook for image compression
+function useImageCompression() {
+  return useCallback((file: File): Promise<Blob> => {
+    return new Promise((resolve, reject) => {
+      const reader = new FileReader();
+      reader.onload = (event) => {
+        const img = new window.Image();
+        img.onload = () => {
+          const canvas = document.createElement('canvas');
+          const maxSize = 800; // Maximum width/height
+          let width = img.width;
+          let height = img.height;
+
+          // Resize image if needed
+          if (width > height && width > maxSize) {
+            height = Math.round((height * maxSize) / width);
+            width = maxSize;
+          } else if (height > maxSize) {
+            width = Math.round((width * maxSize) / height);
+            height = maxSize;
+          }
+
+          // Set canvas dimensions
+          canvas.width = width;
+          canvas.height = height;
+          const ctx = canvas.getContext('2d');
+          
+          if (!ctx) {
+            reject(new Error('فشل تحميل سياق الرسم'));
+            return;
+          }
+          
+          // Draw image with new dimensions
+          ctx.drawImage(img, 0, 0, width, height);
+          
+          // Convert to JPEG with 80% quality
+          canvas.toBlob(
+            (blob) => {
+              if (blob) {
+                resolve(blob);
+              } else {
+                reject(new Error('فشل ضغط الصورة'));
+              }
+            },
+            'image/jpeg',
+            0.8
+          );
+        };
+        img.onerror = () => reject(new Error('خطأ في معالجة الصورة'));
+        if (event.target?.result) {
+          img.src = event.target.result as string;
+        } else {
+          reject(new Error('فشل قراءة بيانات الصورة'));
+        }
+      };
+      reader.onerror = () => reject(new Error('خطأ في قراءة الملف'));
+      reader.readAsDataURL(file);
+    });
+  }, []);
+}
 
 export default function ProfileDashboard() {
   const { data: session, update } = useSession();
-  const [name, setName] = useState<string>(session?.user?.name || "");
+  const [name, setName] = useState<string>("");
   const [uploading, setUploading] = useState(false);
   const [saving, setSaving] = useState(false);
   const [message, setMessage] = useState<string>("");
+  const [previewUrl, setPreviewUrl] = useState<string | null>(null);
+  const [sessionUser, setSessionUser] = useState<Session['user'] | null>(null);
   const [myPosts, setMyPosts] = useState<Array<{ id: string; title: string; status: string; content: string; createdAt?: unknown }>>([]);
   const [currentSlide, setCurrentSlide] = useState(0);
   const [pageLoading, setPageLoading] = useState(true);
   const fileInputRef = useRef<HTMLInputElement | null>(null);
+  const compressImage = useImageCompression();
 
+  // Update session user when session changes
+  useEffect(() => {
+    if (session?.user) {
+      setSessionUser(session.user);
+    }
+  }, [session]);
+
+  // Set initial loading state
   useEffect(() => {
     const timer = setTimeout(() => {
       setPageLoading(false);
@@ -65,26 +139,72 @@ export default function ProfileDashboard() {
     };
   }, [postsQuery]);
 
-  if (pageLoading) {
-    return <LoadingPage />;
-  }
+  // Move onSelectFile before any conditional returns
+  const onSelectFile = useCallback(async (file?: File) => {
+    if (!file || !sessionUser?.id) return;
+    
+    // Validate file type
+    if (!file.type.startsWith('image/')) {
+      setMessage('❌ يرجى تحميل ملف صورة صالح');
+      return;
+    }
 
-  const onSelectFile = async (file?: File) => {
-    if (!file || !session?.user?.id) return;
+    // Show preview
+    const preview = URL.createObjectURL(file);
+    setPreviewUrl(preview);
+
     try {
       setUploading(true);
-      const avatarRef = ref(storage, `avatars/${session.user.id}`);
-      await uploadBytes(avatarRef, file);
+      setMessage('🔄 جاري معالجة الصورة...');
+
+      // Compress the image
+      const compressedBlob = await compressImage(file);
+      
+      // Upload the compressed image
+      const avatarRef = ref(storage, `avatars/${sessionUser.id}`);
+      await uploadBytes(avatarRef, compressedBlob);
+      
+      // Get the download URL
       const url = await getDownloadURL(avatarRef);
-      await updateDoc(doc(db, "users", session.user.id), { image: url });
+      
+      // Update user document
+      await updateDoc(doc(db, "users", sessionUser.id), { 
+        image: url,
+        updatedAt: new Date().toISOString()
+      });
+      
+      // Update the session
       await update();
-      setMessage("تم تحديث الصورة");
-    } catch {
-      setMessage("تعذر رفع الصورة");
+      
+      setMessage('✅ تم تحديث الصورة بنجاح');
+      setTimeout(() => setMessage(''), 3000);
+    } catch (error) {
+      console.error('Error uploading image:', error);
+      setMessage('❌ فشل رفع الصورة. يرجى المحاولة مرة أخرى');
     } finally {
       setUploading(false);
     }
-  };
+  }, [sessionUser?.id, update, compressImage]);
+
+  // Clean up preview URL when component unmounts or previewUrl changes
+  useEffect(() => {
+    return () => {
+      if (previewUrl) {
+        URL.revokeObjectURL(previewUrl);
+      }
+    };
+  }, [previewUrl]);
+
+  // Update name when session user changes
+  useEffect(() => {
+    if (sessionUser?.name) {
+      setName(sessionUser.name);
+    }
+  }, [sessionUser, setName]);
+
+  if (pageLoading) {
+    return <LoadingPage />;
+  }
 
   const onSaveName = async () => {
     if (!session?.user?.id) return;
@@ -129,22 +249,107 @@ export default function ProfileDashboard() {
             </button>
           </div>
 
-          <div>
-            <label className="block text-sm font-medium text-gray-700 mb-2">الصورة الشخصية</label>
-            <input
-              ref={fileInputRef}
-              type="file"
-              accept="image/*"
-              onChange={(e) => onSelectFile(e.target.files?.[0])}
-              className="hidden"
-            />
-            <button
-              type="button"
-              onClick={() => fileInputRef.current?.click()}
-              className="bg-gray-700 text-white px-6 py-2 rounded-lg font-semibold hover:bg-gray-800 transition"
-            >
-              {uploading ? "جارٍ الرفع..." : "اختر صورة"}
-            </button>
+          <div className="space-y-4">
+            <div>
+              <label className="block text-sm font-medium text-gray-700 mb-2">الصورة الشخصية</label>
+              <div className="flex items-center space-x-4">
+                <div className="relative">
+                  <div className="w-24 h-24 rounded-full bg-gray-200 overflow-hidden border-2 border-gray-300">
+                    {(previewUrl || session?.user?.image) ? (
+                      <Image 
+                        src={previewUrl || sessionUser?.image || ''} 
+                        alt="الصورة الشخصية"
+                        width={96}
+                        height={96}
+                        className="w-full h-full object-cover"
+                        unoptimized={!!previewUrl}
+                      />
+                    ) : (
+                      <div className="w-full h-full flex items-center justify-center text-gray-400">
+                        <svg className="w-12 h-12" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+                          <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={1.5} d="M16 7a4 4 0 11-8 0 4 4 0 018 0zM12 14a7 7 0 00-7 7h14a7 7 0 00-7-7z" />
+                        </svg>
+                      </div>
+                    )}
+                  </div>
+                  {uploading && (
+                    <div className="absolute inset-0 bg-black bg-opacity-50 rounded-full flex items-center justify-center">
+                      <div className="animate-spin rounded-full h-8 w-8 border-t-2 border-b-2 border-white"></div>
+                    </div>
+                  )}
+                </div>
+                <div className="flex-1">
+                  <input
+                    ref={fileInputRef}
+                    type="file"
+                    accept="image/*"
+                    onChange={(e) => {
+                      if (e.target.files?.[0]) {
+                        onSelectFile(e.target.files[0]);
+                        // Reset the input to allow selecting the same file again
+                        e.target.value = '';
+                      }
+                    }}
+                    className="hidden"
+                    disabled={uploading}
+                  />
+                  <button
+                    type="button"
+                    onClick={() => fileInputRef.current?.click()}
+                    disabled={uploading}
+                    className="bg-blue-600 text-white px-6 py-2 rounded-lg font-medium hover:bg-blue-700 transition disabled:opacity-50 disabled:cursor-not-allowed flex items-center space-x-2"
+                  >
+                    {uploading ? (
+                      <>
+                        <svg className="animate-spin -ml-1 mr-2 h-4 w-4 text-white" xmlns="http://www.w3.org/2000/svg" fill="none" viewBox="0 0 24 24">
+                          <circle className="opacity-25" cx="12" cy="12" r="10" stroke="currentColor" strokeWidth="4"></circle>
+                          <path className="opacity-75" fill="currentColor" d="M4 12a8 8 0 018-8V0C5.373 0 0 5.373 0 12h4zm2 5.291A7.962 7.962 0 014 12H0c0 3.042 1.135 5.824 3 7.938l3-2.647z"></path>
+                        </svg>
+                        <span>جاري الرفع...</span>
+                      </>
+                    ) : (
+                      <>
+                        <svg className="w-4 h-4" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+                          <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M4 16v1a3 3 0 003 3h10a3 3 0 003-3v-1m-4-8l-4-4m0 0L8 8m4-4v12" />
+                        </svg>
+                        <span>{sessionUser?.image ? 'تغيير الصورة' : 'اختر صورة'}</span>
+                      </>
+                    )}
+                  </button>
+                  {sessionUser?.image && !uploading && (
+                    <button
+                      type="button"
+                      onClick={async () => {
+                        try {
+                          setUploading(true);
+                          await updateDoc(doc(db, "users", sessionUser.id), { 
+                            image: null,
+                            updatedAt: new Date().toISOString()
+                          });
+                          await update();
+                          setPreviewUrl(null);
+                          setMessage('تم حذف الصورة بنجاح');
+                          setTimeout(() => setMessage(''), 3000);
+                        } catch (error) {
+                          console.error('Error removing image:', error);
+                          setMessage('❌ فشل حذف الصورة');
+                        } finally {
+                          setUploading(false);
+                        }
+                      }}
+                      disabled={uploading}
+                      className="mt-2 text-red-600 hover:text-red-800 text-sm font-medium flex items-center space-x-1"
+                    >
+                      <svg className="w-4 h-4" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+                        <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M19 7l-.867 12.142A2 2 0 0116.138 21H7.862a2 2 0 01-1.995-1.858L5 7m5 4v6m4-6v6m1-10V4a1 1 0 00-1-1h-4a1 1 0 00-1 1v3M4 7h16" />
+                      </svg>
+                      <span>حذف الصورة</span>
+                    </button>
+                  )}
+                </div>
+              </div>
+              <p className="mt-2 text-xs text-gray-500">يُفضل أن تكون الصورة مربعة وبجودة عالية</p>
+            </div>
           </div>
 
           {message && (
