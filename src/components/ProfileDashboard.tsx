@@ -10,20 +10,22 @@ import LoadingPage from "./LoadingPage";
 import Image from "next/image";
 import type { Session } from "next-auth";
 
-// Custom hook for image compression
+// Custom hook for image compression and base64 conversion
 function useImageCompression() {
-  return useCallback((file: File): Promise<Blob> => {
+  return useCallback((file: File): Promise<{ base64: string; blob: Blob }> => {
     return new Promise((resolve, reject) => {
       const reader = new FileReader();
+      
       reader.onload = (event) => {
         const img = new window.Image();
+        
         img.onload = () => {
           const canvas = document.createElement('canvas');
           const maxSize = 800; // Maximum width/height
           let width = img.width;
           let height = img.height;
 
-          // Resize image if needed
+          // Calculate new dimensions while maintaining aspect ratio
           if (width > height && width > maxSize) {
             height = Math.round((height * maxSize) / width);
             width = maxSize;
@@ -43,28 +45,35 @@ function useImageCompression() {
           }
           
           // Draw image with new dimensions
+          ctx.fillStyle = '#ffffff';
+          ctx.fillRect(0, 0, width, height);
           ctx.drawImage(img, 0, 0, width, height);
           
-          // Convert to JPEG with 80% quality
+          // Convert to base64 and Blob
+          const base64 = canvas.toDataURL('image/jpeg', 0.8);
+          
           canvas.toBlob(
             (blob) => {
               if (blob) {
-                resolve(blob);
+                resolve({ base64, blob });
               } else {
-                reject(new Error('فشل ضغط الصورة'));
+                reject(new Error('فشل تحويل الصورة'));
               }
             },
             'image/jpeg',
             0.8
           );
         };
+        
         img.onerror = () => reject(new Error('خطأ في معالجة الصورة'));
+        
         if (event.target?.result) {
           img.src = event.target.result as string;
         } else {
           reject(new Error('فشل قراءة بيانات الصورة'));
         }
       };
+      
       reader.onerror = () => reject(new Error('خطأ في قراءة الملف'));
       reader.readAsDataURL(file);
     });
@@ -149,27 +158,27 @@ export default function ProfileDashboard() {
       return;
     }
 
-    // Show preview
-    const preview = URL.createObjectURL(file);
-    setPreviewUrl(preview);
-
     try {
       setUploading(true);
       setMessage('🔄 جاري معالجة الصورة...');
 
-      // Compress the image
-      const compressedBlob = await compressImage(file);
+      // Compress the image and get base64
+      const { base64, blob } = await compressImage(file);
       
-      // Upload the compressed image
+      // Show preview from base64
+      setPreviewUrl(base64);
+      
+      // Upload the compressed image to Firebase
       const avatarRef = ref(storage, `avatars/${sessionUser.id}`);
-      await uploadBytes(avatarRef, compressedBlob);
+      await uploadBytes(avatarRef, blob);
       
       // Get the download URL
       const url = await getDownloadURL(avatarRef);
       
-      // Update user document
+      // Update user document with both URL and base64
       await updateDoc(doc(db, "users", sessionUser.id), { 
         image: url,
+        imageBase64: base64, // Store base64 for faster initial load
         updatedAt: new Date().toISOString()
       });
       
