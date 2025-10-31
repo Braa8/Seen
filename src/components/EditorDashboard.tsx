@@ -322,7 +322,12 @@ interface ToolbarButton {
   title: string;
 }
 
-const EditorToolbar = ({ editor }: { editor: Editor | null }) => {
+interface EditorToolbarProps {
+  editor: Editor | null;
+  uploadImage: (base64Image: string) => Promise<string>;
+}
+
+const EditorToolbar = ({ editor, uploadImage }: EditorToolbarProps) => {
   const toolbarButtons: ToolbarButton[] = [
     {
       icon: FaBold,
@@ -354,8 +359,47 @@ const EditorToolbar = ({ editor }: { editor: Editor | null }) => {
     {
       icon: FaImage,
       action: () => {
-        const url = window.prompt('أدخل رابط الصورة:');
-        if (url) editor?.chain().focus().setImage({ src: url }).run();
+        // Create a file input element
+        const input = document.createElement('input');
+        input.type = 'file';
+        input.accept = 'image/*';
+        
+        // Handle file selection
+        input.onchange = async (e) => {
+          const file = (e.target as HTMLInputElement).files?.[0];
+          if (!file) return;
+          
+          try {
+            // Read the file as base64
+            const reader = new FileReader();
+            reader.onload = async (e) => {
+              const base64Image = e.target?.result as string;
+              if (base64Image) {
+                // Process and insert the image
+                const processedImage = await uploadImage(base64Image);
+                if (editor) {
+                  const imageHtml = `
+                    <div class="image-container">
+                      <img 
+                        src="${processedImage}" 
+                        alt="صورة مرفوعة" 
+                        class="max-w-full h-auto rounded-lg"
+                      />
+                    </div>
+                  `;
+                  editor.chain().focus().insertContent(imageHtml).run();
+                }
+              }
+            };
+            reader.readAsDataURL(file);
+          } catch (error) {
+            console.error('Error uploading image:', error);
+            alert('حدث خطأ أثناء رفع الصورة');
+          }
+        };
+        
+        // Trigger the file input dialog
+        input.click();
       },
       title: "إدراج صورة"
     },
@@ -853,7 +897,7 @@ export default function EditorDashboard() {
               <div>
                 <div className="flex justify-between items-center mb-1">
                   <label className="block text-sm font-medium text-gray-700">المحتوى</label>
-                  <EditorToolbar editor={editor} />
+                  <EditorToolbar editor={editor} uploadImage={uploadImage} />
                 </div>
                 <div className="border border-gray-300 rounded-lg p-4 min-h-[300px]">
                   <EditorContent editor={editor} onPaste={handleImagePaste} />

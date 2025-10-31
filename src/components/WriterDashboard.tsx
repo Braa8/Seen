@@ -124,6 +124,7 @@ export default function WriterDashboard({ onPublished }: Props) {
       if (!base64Image.startsWith('data:image/')) {
         // If it's a URL, return it as is
         if (base64Image.startsWith('http')) {
+          setImageUrl(base64Image);
           return base64Image;
         }
         throw new Error('صيغة الصورة غير مدعومة. يرجى تحميل صورة صالحة.');
@@ -132,11 +133,12 @@ export default function WriterDashboard({ onPublished }: Props) {
       // If the image is small enough (less than 1MB), use it as is
       const base64Size = base64Image.length * (3/4); // Approximate size in bytes
       if (base64Size < 1024 * 1024) { // 1MB
+        setImageUrl(base64Image);
         return base64Image;
       }
 
       // For larger images, compress them
-      const img = new Image();
+      const img = new window.Image();
       const canvas = document.createElement('canvas');
       const ctx = canvas.getContext('2d');
       
@@ -169,14 +171,18 @@ export default function WriterDashboard({ onPublished }: Props) {
           // If still too large, reduce quality further
           if (compressedBase64.length > 1024 * 1024) { // 1MB
             const lowerQuality = canvas.toDataURL('image/jpeg', 0.6);
+            setImageUrl(lowerQuality);
             resolve(lowerQuality);
           } else {
+            setImageUrl(compressedBase64);
             resolve(compressedBase64);
           }
         };
 
         img.onerror = () => {
-          reject(new Error('فشل تحميل الصورة'));
+          const error = new Error('فشل تحميل الصورة');
+          setMessage(`❌ ${error.message}`);
+          reject(error);
         };
 
         // Start loading the image
@@ -394,11 +400,57 @@ export default function WriterDashboard({ onPublished }: Props) {
                 </button>
                 <button
                   type="button"
-                  onClick={() => {
-                    const url = window.prompt('أدخل رابط الصورة:');
-                    if (url) {
-                      editor?.chain().focus().setImage({ src: url }).run();
-                    }
+                  onClick={async () => {
+                    // Create a file input element
+                    const input = document.createElement('input');
+                    input.type = 'file';
+                    input.accept = 'image/*';
+                    
+                    // Handle file selection
+                    input.onchange = async (e) => {
+                      const file = (e.target as HTMLInputElement).files?.[0];
+                      if (!file) return;
+                      
+                      try {
+                        setMessage('🔄 جاري معالجة الصورة...');
+                        // Read the file as base64
+                        const reader = new FileReader();
+                        reader.onload = async (e) => {
+                          const base64Image = e.target?.result as string;
+                          if (base64Image) {
+                            try {
+                              // Process the image
+                              const processedImage = await handleImageUpload(base64Image);
+                              if (editor) {
+                                // Create a container div with the desired classes
+                                const imageHtml = `
+                                  <div class="image-container">
+                                    <img 
+                                      src="${processedImage}" 
+                                      alt="صورة مرفوعة" 
+                                      class="max-w-full h-auto rounded-lg"
+                                    />
+                                  </div>
+                                `;
+                                editor.chain().focus().insertContent(imageHtml).run();
+                                setMessage('✅ تم إضافة الصورة بنجاح');
+                                setTimeout(() => setMessage(null), 2000);
+                              }
+                            } catch (error) {
+                              console.error('Error processing image:', error);
+                              setMessage('❌ فشل معالجة الصورة');
+                            }
+                          }
+                        };
+                        reader.readAsDataURL(file);
+                      } catch (error) {
+                        console.error('Error reading file:', error);
+                        setMessage('❌ حدث خطأ أثناء قراءة الملف');
+                      }
+                    };
+                    
+                    // Trigger the file input dialog
+                    input.click();
                   }}
                   className="p-2 rounded hover:bg-gray-200"
                   title="إدراج صورة"

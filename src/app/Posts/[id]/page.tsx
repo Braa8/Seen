@@ -6,6 +6,7 @@ import { useState, useEffect } from 'react';
 import { db } from '@/lib/firebase';
 import { doc, getDoc } from 'firebase/firestore';
 import type { Post } from '@/data/posts';
+import Image from 'next/image';
 
 export default function PostPage() {
   const params = useParams();
@@ -101,6 +102,17 @@ export default function PostPage() {
               day: 'numeric' 
             })}</span>
           </div>
+          
+          {/* Main Image */}
+          {post.image && (
+            <div className="mt-8 rounded-xl overflow-hidden shadow-lg">
+              <Image 
+                src={post.image} 
+                alt={post.title}
+                className="w-full h-auto max-h-[500px] object-cover"
+              />
+            </div>
+          )}
         </div>
       </div>
 
