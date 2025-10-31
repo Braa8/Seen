@@ -325,9 +325,10 @@ interface ToolbarButton {
 interface EditorToolbarProps {
   editor: Editor | null;
   uploadImage: (base64Image: string) => Promise<string>;
+  setMessage: (message: string | null) => void;
 }
 
-const EditorToolbar = ({ editor, uploadImage }: EditorToolbarProps) => {
+const EditorToolbar = ({ editor, uploadImage, setMessage }: EditorToolbarProps) => {
   const toolbarButtons: ToolbarButton[] = [
     {
       icon: FaBold,
@@ -375,26 +376,36 @@ const EditorToolbar = ({ editor, uploadImage }: EditorToolbarProps) => {
             reader.onload = async (e) => {
               const base64Image = e.target?.result as string;
               if (base64Image) {
-                // Process and insert the image
-                const processedImage = await uploadImage(base64Image);
-                if (editor) {
-                  const imageHtml = `
-                    <div class="image-container">
-                      <img 
-                        src="${processedImage}" 
-                        alt="صورة مرفوعة" 
-                        class="max-w-full h-auto rounded-lg"
-                      />
-                    </div>
-                  `;
-                  editor.chain().focus().insertContent(imageHtml).run();
+                try {
+                  setMessage('🔄 جاري معالجة الصورة...');
+                  const processedImage = await uploadImage(base64Image);
+                  if (editor) {
+                    // Create a container div with the desired classes
+                    const imageHtml = `
+                      <div class="image-container my-4">
+                        <img 
+                          src="${processedImage}" 
+                          alt="صورة مرفوعة" 
+                          class="max-w-full h-auto rounded-lg mx-auto block"
+                          style="max-height: 500px; width: auto;"
+                        />
+                      </div>
+                    `;
+                    // Insert the HTML at the current cursor position
+                    editor.chain().focus().insertContent(imageHtml).run();
+                    setMessage('✅ تم إضافة الصورة بنجاح');
+                    setTimeout(() => setMessage(null), 2000);
+                  }
+                } catch (error) {
+                  console.error('Error processing image:', error);
+                  setMessage('❌ فشل معالجة الصورة');
                 }
               }
             };
             reader.readAsDataURL(file);
           } catch (error) {
             console.error('Error uploading image:', error);
-            alert('حدث خطأ أثناء رفع الصورة');
+            setMessage('❌ حدث خطأ أثناء رفع الصورة');
           }
         };
         
@@ -897,7 +908,11 @@ export default function EditorDashboard() {
               <div>
                 <div className="flex justify-between items-center mb-1">
                   <label className="block text-sm font-medium text-gray-700">المحتوى</label>
-                  <EditorToolbar editor={editor} uploadImage={uploadImage} />
+                  <EditorToolbar 
+                    editor={editor} 
+                    uploadImage={uploadImage} 
+                    setMessage={setMessage} 
+                  />
                 </div>
                 <div className="border border-gray-300 rounded-lg p-4 min-h-[300px]">
                   <EditorContent editor={editor} onPaste={handleImagePaste} />

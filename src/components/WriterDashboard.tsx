@@ -10,7 +10,7 @@ import StarterKit from "@tiptap/starter-kit";
 import Placeholder from "@tiptap/extension-placeholder";
 import ImageExtension from "@tiptap/extension-image";
 import Link from "@tiptap/extension-link";
-import ImageUploader from "./common/ImageUploader";
+import Image from "next/image";
 
 const DRAFT_TTL_MS = 24 * 60 * 60 * 1000; // 24 hours
 
@@ -330,28 +330,74 @@ export default function WriterDashboard({ onPublished }: Props) {
             </select>
           </div>
 
-          <div className="space-y-2">
-            <label className="block text-sm font-medium text-gray-700">
-              صورة المنشور (اختياري)
-            </label>
-            <ImageUploader 
-              onImageUpload={handleImageUpload}
-              previewClassName="max-w-full"
-              initialImage={imageUrl}
-            />
+          <div>
+            <label className="block text-sm font-medium text-gray-700 mb-2">الصورة الرئيسية</label>
+            <div className="flex items-center space-x-4">
+              {imageUrl ? (
+                <div className="relative w-20 h-20">
+                  <Image
+                    src={imageUrl}
+                    alt="صورة المنشور"
+                    className="w-full h-full object-cover rounded-lg"
+                  />
+                  <button
+                    type="button"
+                    onClick={() => setImageUrl('')}
+                    className="absolute -top-2 -right-2 bg-red-500 text-white rounded-full w-5 h-5 flex items-center justify-center text-xs hover:bg-red-600"
+                    title="حذف الصورة"
+                  >
+                    ×
+                  </button>
+                </div>
+              ) : (
+                <div className="w-20 h-20 border-2 border-dashed border-gray-300 rounded-lg flex items-center justify-center">
+                  <FaImage className="text-gray-400" />
+                </div>
+              )}
+              <label className="flex-1">
+                <div className="px-4 py-2 bg-white text-purple-600 rounded-lg border-2 border-dashed border-purple-300 cursor-pointer hover:bg-purple-50 text-center">
+                  {imageUrl ? 'تغيير الصورة' : 'اختر صورة'}
+                </div>
+                <input
+                  type="file"
+                  className="hidden"
+                  accept="image/*"
+                  onChange={async (e) => {
+                    const file = e.target.files?.[0];
+                    if (file) {
+                      try {
+                        setMessage('🔄 جاري معالجة الصورة...');
+                        const reader = new FileReader();
+                        reader.onload = async (e) => {
+                          const base64Image = e.target?.result as string;
+                          if (base64Image) {
+                            const processedImage = await handleImageUpload(base64Image);
+                            setImageUrl(processedImage);
+                            setMessage('✅ تم تحميل الصورة بنجاح');
+                            setTimeout(() => setMessage(null), 2000);
+                          }
+                        };
+                        reader.readAsDataURL(file);
+                      } catch (error) {
+                        console.error('Error processing image:', error);
+                        setMessage('❌ فشل تحميل الصورة');
+                      }
+                    }
+                  }}
+                />
+              </label>
+            </div>
           </div>
 
           <div>
-            <div className="flex items-center justify-between mb-2">
-              <label className="block text-sm font-medium text-gray-700">محتوى المقال *</label>
-            </div>
-
+            <label className="block text-sm font-medium text-gray-700 mb-2">محتوى المقال *</label>
+            
             <div className="bg-yellow-50 border border-yellow-200 rounded-lg p-3 mb-3 text-xs text-yellow-800">
               💡 <strong>نصيحة:</strong> يمكنك رفع ملف نصي أو Word أو PDF لإدراج المحتوى تلقائياً، أو الكتابة مباشرة في المحرر أدناه.
             </div>
 
             <div className="mb-4">
-              <div className="flex gap-2 flex-wrap bg-gray-50 p-2 rounded-lg border border-gray-200">
+              <div className="flex flex-wrap gap-2 bg-gray-50 p-2 rounded-t-lg border border-gray-200">
                 <button
                   type="button"
                   onClick={() => editor?.chain().focus().toggleBold().run()}
@@ -401,37 +447,35 @@ export default function WriterDashboard({ onPublished }: Props) {
                 <button
                   type="button"
                   onClick={async () => {
-                    // Create a file input element
                     const input = document.createElement('input');
                     input.type = 'file';
                     input.accept = 'image/*';
                     
-                    // Handle file selection
                     input.onchange = async (e) => {
                       const file = (e.target as HTMLInputElement).files?.[0];
                       if (!file) return;
                       
                       try {
                         setMessage('🔄 جاري معالجة الصورة...');
-                        // Read the file as base64
                         const reader = new FileReader();
                         reader.onload = async (e) => {
                           const base64Image = e.target?.result as string;
                           if (base64Image) {
                             try {
-                              // Process the image
                               const processedImage = await handleImageUpload(base64Image);
                               if (editor) {
                                 // Create a container div with the desired classes
                                 const imageHtml = `
-                                  <div class="image-container">
+                                  <div class="image-container my-4">
                                     <img 
                                       src="${processedImage}" 
                                       alt="صورة مرفوعة" 
-                                      class="max-w-full h-auto rounded-lg"
+                                      class="max-w-full h-auto rounded-lg mx-auto block"
+                                      style="max-height: 500px; width: auto;"
                                     />
                                   </div>
                                 `;
+                                // Insert the HTML at the current cursor position
                                 editor.chain().focus().insertContent(imageHtml).run();
                                 setMessage('✅ تم إضافة الصورة بنجاح');
                                 setTimeout(() => setMessage(null), 2000);
@@ -448,8 +492,6 @@ export default function WriterDashboard({ onPublished }: Props) {
                         setMessage('❌ حدث خطأ أثناء قراءة الملف');
                       }
                     };
-                    
-                    // Trigger the file input dialog
                     input.click();
                   }}
                   className="p-2 rounded hover:bg-gray-200"
