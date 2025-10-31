@@ -3,9 +3,8 @@
 import { useMemo, useState, useEffect } from "react";
 import { useSession } from "next-auth/react";
 import { FaBold, FaItalic, FaUnderline, FaLink, FaImage, FaListUl, FaListOl } from "react-icons/fa";
-import { db, storage } from "../lib/firebase";
+import { db } from "../lib/firebase";
 import { addDoc, collection, serverTimestamp } from "firebase/firestore";
-import { ref, uploadBytes, getDownloadURL } from "firebase/storage";
 import { useEditor, EditorContent } from "@tiptap/react";
 import StarterKit from "@tiptap/starter-kit";
 import Placeholder from "@tiptap/extension-placeholder";
@@ -41,7 +40,6 @@ export default function WriterDashboard({ onPublished }: Props) {
   const [excerpt, setExcerpt] = useState("");
   const [category, setCategory] = useState("تقنية");
   const [imageUrl, setImageUrl] = useState("");
-  const [imageFile, setImageFile] = useState<File | null>(null);
   const [loading, setLoading] = useState(false);
   const [message, setMessage] = useState<string | null>(null);
   const [isUploading, setIsUploading] = useState(false);
@@ -122,129 +120,152 @@ export default function WriterDashboard({ onPublished }: Props) {
       setIsUploading(true);
       setMessage('🔄 جاري حفظ الصورة...');
 
-      // Convert base64 to blob for Firebase Storage
-      const response = await fetch(base64Image);
-      const blob = await response.blob();
-      
-      // Validate file type
-      const validTypes = ['image/jpeg', 'image/png', 'image/webp', 'image/gif'];
-      if (!validTypes.includes(blob.type)) {
-        throw new Error('نوع الملف غير مدعوم. يرجى تحميل صورة بصيغة JPG أو PNG أو WebP أو GIF.');
-      }
-
-      // Validate file size (max 5MB)
-      const maxSize = 5 * 1024 * 1024; // 5MB
-      if (blob.size > maxSize) {
-        throw new Error('حجم الصورة كبير جداً. الحد الأقصى المسموح به هو 5 ميجابايت.');
-      }
-
-      const fileExt = blob.type.split('/')[1] || 'png';
-      const fileName = `img_${Date.now()}.${fileExt}`;
-      const storagePath = `post-images/${session.user.id}/${fileName}`;
-      const storageRef = ref(storage, storagePath);
-      
-      // Upload to Firebase Storage with metadata
-      const metadata = {
-        contentType: blob.type,
-        cacheControl: 'public, max-age=31536000',
-        customMetadata: {
-          uploadedBy: session.user.id,
-          uploadedAt: new Date().toISOString(),
-          source: 'writer-dashboard'
+      // Check if the image is a base64 string
+      if (!base64Image.startsWith('data:image/')) {
+        // If it's a URL, return it as is
+        if (base64Image.startsWith('http')) {
+          return base64Image;
         }
-      };
-
-      const snapshot = await uploadBytes(storageRef, blob, metadata);
-      const downloadURL = await getDownloadURL(snapshot.ref);
-
-      if (!downloadURL) {
-        throw new Error('فشل الحصول على رابط الصورة');
+        throw new Error('صيغة الصورة غير مدعومة. يرجى تحميل صورة صالحة.');
       }
 
-      setMessage('✅ تم حفظ الصورة بنجاح');
-      setMessage("✅ تم رفع الصورة بنجاح");
+      // If the image is small enough (less than 1MB), use it as is
+      const base64Size = base64Image.length * (3/4); // Approximate size in bytes
+      if (base64Size < 1024 * 1024) { // 1MB
+        return base64Image;
+      }
+
+      // For larger images, compress them
+      const img = new Image();
+      const canvas = document.createElement('canvas');
+      const ctx = canvas.getContext('2d');
       
-      return downloadURL;
+      // Create a promise to handle the image loading and compression
+      return new Promise((resolve, reject) => {
+        img.onload = () => {
+          // Calculate new dimensions (max 1200px width or height)
+          const maxSize = 1200;
+          let width = img.width;
+          let height = img.height;
+
+          if (width > height && width > maxSize) {
+            height = Math.round((height * maxSize) / width);
+            width = maxSize;
+          } else if (height > maxSize) {
+            width = Math.round((width * maxSize) / height);
+            height = maxSize;
+          }
+
+          // Set canvas dimensions
+          canvas.width = width;
+          canvas.height = height;
+
+          // Draw and compress image
+          ctx?.drawImage(img, 0, 0, width, height);
+          
+          // Convert to JPEG with 80% quality
+          const compressedBase64 = canvas.toDataURL('image/jpeg', 0.8);
+          
+          // If still too large, reduce quality further
+          if (compressedBase64.length > 1024 * 1024) { // 1MB
+            const lowerQuality = canvas.toDataURL('image/jpeg', 0.6);
+            resolve(lowerQuality);
+          } else {
+            resolve(compressedBase64);
+          }
+        };
+
+        img.onerror = () => {
+          reject(new Error('فشل تحميل الصورة'));
+        };
+
+        // Start loading the image
+        img.src = base64Image;
+      });
+      
     } catch (error) {
-      console.error("Error uploading image:", error);
-      
-      // More detailed error handling
-      let errorMessage = 'Unknown error';
-      if (error instanceof Error) {
-        if (error.message.includes('cors')) {
-          errorMessage = 'CORS issue. Please check storage settings';
-        } else if (error.message.includes('permission')) {
-          errorMessage = 'Insufficient permissions to upload file';
-        } else {
-          errorMessage = error.message;
-        }
-      }
-      
-      throw new Error(`Failed to upload file: ${errorMessage}`);
+      const errorMessage = error instanceof Error ? error.message : 'حدث خطأ غير معروف';
+      setMessage(`❌ فشل معالجة الصورة: ${errorMessage}`);
+      throw error;
     } finally {
       setIsUploading(false);
     }
   };
 
-  const handleSubmit = async (e: React.FormEvent): Promise<void> => {
+  const handleSubmit = async (e: React.FormEvent) => {
     e.preventDefault();
-
-    if (!session?.user) {
+    
+    if (!session?.user?.id) {
       setMessage("❌ يجب تسجيل الدخول أولاً");
       return;
     }
 
-    if (!title.trim() || !excerpt.trim() || !editorContent.trim()) {
-      setMessage("❌ الرجاء تعبئة جميع الحقول المطلوبة");
-      return;
-    }
-
-    // If there's an image file but no URL, it means it's still uploading
-    if (imageFile && !imageUrl) {
-      setMessage("🔄 جاري رفع الصورة، الرجاء الانتظار...");
+    if (!title.trim() || !editor?.getText().trim()) {
+      setMessage("❌ العنوان والمحتوى مطلوبان");
       return;
     }
 
     setLoading(true);
-    setMessage("جاري نشر المنشور...");
+    setMessage("جاري حفظ المقال...");
 
     try {
-      // Save to Firestore
+      let imageToSave = imageUrl;
+      
+      // Process image if a new one was uploaded
+      if (imageUrl && imageUrl.startsWith('data:image/')) {
+        try {
+          setMessage("🔄 جاري معالجة الصورة...");
+          imageToSave = await handleImageUpload(imageUrl);
+        } catch (error) {
+          console.error("Image processing failed:", error);
+          setMessage("❌ فشل معالجة الصورة. سيتم حفظ المقال بدون صورة.");
+          imageToSave = "";
+        }
+      }
+
+      // Prepare post data
       const postData = {
         title: title.trim(),
         excerpt: excerpt.trim(),
-        content: editorContent,
-        category,
-        status: "pending" as const,
+        content: editor.getHTML(),
+        status: "draft",
+        category: category || "عام",
+        image: imageToSave,
+        authorId: session.user.id,
         authorName: session.user.name || "مستخدم مجهول",
-        authorEmail: session.user.email || "",
+        authorEmail: session.user.email,
         createdAt: serverTimestamp(),
         updatedAt: serverTimestamp(),
-        ...(imageUrl && { image: imageUrl }), // Only include if imageUrl exists
       };
 
+      // Save to Firestore
       const docRef = await addDoc(collection(db, "posts"), postData);
 
-      // Clear the form
+      // Clear form
       setTitle("");
       setExcerpt("");
+      setCategory("عام");
       setImageUrl("");
-      setImageFile(null);
-      editor?.commands.setContent("");
-      setEditorContent("");
+      editor.commands.clearContent();
+      
+      // Clear draft from localStorage
+      if (typeof window !== "undefined") {
+        localStorage.removeItem(storageKey);
+      }
 
-      // Clear the draft
-      localStorage.removeItem(storageKey);
-
-      setMessage("✅ تم إرسال المنشور بنجاح في انتظار المراجعة");
+      setMessage("✅ تم حفظ المقال بنجاح");
       
       // Notify parent component if needed
       if (onPublished) {
         onPublished(docRef.id);
       }
+      
+      // Reset message after 3 seconds
+      setTimeout(() => setMessage(null), 3000);
+      
     } catch (error) {
-      console.error("Error adding document: ", error);
-      setMessage(`❌ حدث خطأ أثناء محاولة نشر المنشور: ${error instanceof Error ? error.message : 'خطأ غير معروف'}`);
+      console.error("Error saving post:", error);
+      setMessage(`❌ حدث خطأ أثناء حفظ المقال: ${error instanceof Error ? error.message : 'خطأ غير معروف'}`);
     } finally {
       setLoading(false);
     }

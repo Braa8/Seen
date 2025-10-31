@@ -2,8 +2,7 @@
 
 import { useCallback, useEffect, useMemo, useRef, useState } from "react";
 import { useSession } from "next-auth/react";
-import { db, storage } from "../lib/firebase";
-import { ref, getDownloadURL, uploadBytes } from "firebase/storage";
+import { db } from "../lib/firebase";
 import { FieldValue} from 'firebase/firestore';
 import {
   collection,
@@ -210,7 +209,7 @@ const useImageUpload = (sessionId: string | undefined) => {
   const [isUploading, setIsUploading] = useState(false);
   const [message, setMessage] = useState<string | null>(null);
 
-  const uploadImage = useCallback(async (base64Image: string): Promise<string> => {
+  const processImage = useCallback(async (base64Image: string): Promise<string> => {
     if (!sessionId) {
       const errorMsg = '❌ لم يتم العثور على جلسة مستخدم';
       setMessage(errorMsg);
@@ -219,37 +218,73 @@ const useImageUpload = (sessionId: string | undefined) => {
 
     try {
       setIsUploading(true);
-      setMessage("🔄 جاري حفظ الصورة...");
+      setMessage("🔄 جاري معالجة الصورة...");
 
-      const response = await fetch(base64Image);
-      const blob = await response.blob();
-      const fileExt = blob.type.split('/')[1] || 'png';
-      const fileName = `img_${Date.now()}.${fileExt}`;
-      const storagePath = `post-images/${sessionId}/${fileName}`;
-      const storageRef = ref(storage, storagePath);
-      
-      const metadata = {
-        contentType: blob.type,
-        cacheControl: 'public, max-age=31536000',
-        customMetadata: {
-          uploadedBy: sessionId,
-          uploadedAt: new Date().toISOString(),
-          source: 'editor-dashboard'
+      // Check if the image is a base64 string
+      if (!base64Image.startsWith('data:image/')) {
+        // If it's a URL, return it as is
+        if (base64Image.startsWith('http')) {
+          return base64Image;
         }
-      };
-
-      const snapshot = await uploadBytes(storageRef, blob, metadata);
-      const downloadURL = await getDownloadURL(snapshot.ref);
-      
-      if (!downloadURL) {
-        throw new Error('فشل الحصول على رابط الصورة');
+        throw new Error('صيغة الصورة غير مدعومة. يرجى تحميل صورة صالحة.');
       }
+
+      // If the image is small enough (less than 1MB), use it as is
+      const base64Size = base64Image.length * (3/4); // Approximate size in bytes
+      if (base64Size < 1024 * 1024) { // 1MB
+        return base64Image;
+      }
+
+      // For larger images, compress them
+      return new Promise((resolve, reject) => {
+        const img = new Image();
+        const canvas = document.createElement('canvas');
+        const ctx = canvas.getContext('2d');
+        
+        img.onload = () => {
+          // Calculate new dimensions (max 1200px width or height)
+          const maxSize = 1200;
+          let width = img.width;
+          let height = img.height;
+
+          if (width > height && width > maxSize) {
+            height = Math.round((height * maxSize) / width);
+            width = maxSize;
+          } else if (height > maxSize) {
+            width = Math.round((width * maxSize) / height);
+            height = maxSize;
+          }
+
+          // Set canvas dimensions
+          canvas.width = width;
+          canvas.height = height;
+
+          // Draw and compress image
+          ctx?.drawImage(img, 0, 0, width, height);
+          
+          // Convert to JPEG with 80% quality
+          const compressedBase64 = canvas.toDataURL('image/jpeg', 0.8);
+          
+          // If still too large, reduce quality further
+          if (compressedBase64.length > 1024 * 1024) { // 1MB
+            const lowerQuality = canvas.toDataURL('image/jpeg', 0.6);
+            resolve(lowerQuality);
+          } else {
+            resolve(compressedBase64);
+          }
+        };
+
+        img.onerror = () => {
+          reject(new Error('فشل تحميل الصورة'));
+        };
+
+        // Start loading the image
+        img.src = base64Image;
+      });
       
-      setMessage("✅ تم حفظ الصورة بنجاح");
-      return downloadURL;
     } catch (error) {
       const errorMessage = error instanceof Error ? error.message : 'حدث خطأ غير معروف';
-      setMessage(`❌ فشل رفع الصورة: ${errorMessage}`);
+      setMessage(`❌ فشل معالجة الصورة: ${errorMessage}`);
       throw error;
     } finally {
       setIsUploading(false);
@@ -259,7 +294,7 @@ const useImageUpload = (sessionId: string | undefined) => {
   return {
     isUploading,
     message,
-    uploadImage,
+    uploadImage: processImage,
     setMessage
   };
 };
@@ -553,50 +588,57 @@ export default function EditorDashboard() {
     }
   }, [editor, setDraftData, setMessage]);
 
-  const saveEdits = useCallback(async () => {
+  const saveEdits = useCallback(async (): Promise<void> => {
     if (!draftData.selectedPost || !editor) {
-      setMessage("خطأ: لا يوجد منشور محدد للتحرير");
+      setMessage("❌ خطأ: لا يوجد منشور محدد للتحرير");
       return;
     }
 
     setLoading(true);
-    setMessage("جاري حفظ التعديلات...");
+    setMessage("🔄 جاري حفظ التعديلات...");
 
     try {
-      let uploadedImageUrl = draftData.imageUrl;
+      let imageToSave = draftData.imageUrl;
 
+      // Process image if a new one was uploaded
       if (draftData.imageUrl && draftData.imageUrl.startsWith('data:image/')) {
-        setMessage("🔄 جاري حفظ الصورة...");
-        uploadedImageUrl = await uploadImage(draftData.imageUrl);
-        
-        if (!uploadedImageUrl) {
-          throw new Error("فشل رفع الصورة: لم يتم الحصول على رابط صالح");
+        try {
+          setMessage("🔄 جاري معالجة الصورة...");
+          imageToSave = await uploadImage(draftData.imageUrl);
+        } catch (error) {
+          console.error("Image processing failed:", error);
+          setMessage("❌ فشل معالجة الصورة. سيتم حفظ التعديلات بدون تغيير الصورة.");
+          // Keep the original image URL if processing fails
+          imageToSave = draftData.selectedPost?.image || "";
         }
       }
 
-      if (!draftData.title.trim()) throw new Error("العنوان مطلوب");
-      if (!draftData.category) throw new Error("يرجى اختيار تصنيف");
+      if (!draftData.title.trim()) throw new Error("❌ العنوان مطلوب");
+      if (!draftData.category) throw new Error("❌ يرجى اختيار تصنيف");
 
+      // Prepare update data
       const updateData: PostUpdateData = {
         title: draftData.title.trim(),
         excerpt: draftData.excerpt.trim(),
         category: draftData.category,
         content: editor.getHTML(),
-        updatedAt: serverTimestamp()
+        updatedAt: serverTimestamp(),
+        image: imageToSave || null
       };
 
-      if (uploadedImageUrl !== undefined) {
-        updateData.image = uploadedImageUrl || null;
-      }
-
+      // Update the document in Firestore
       await updateDoc(doc(db, "posts", draftData.selectedPost.id), updateData);
 
-      setMessage("تم حفظ التعديلات بنجاح ✅");
+      setMessage("✅ تم حفظ التعديلات بنجاح");
+      
+      // Clear the draft after successful save
       clearDraft();
       
+      // Reset message after 3 seconds
       setTimeout(() => setMessage(null), 3000);
     } catch (error) {
-      setMessage(`خطأ: ${error instanceof Error ? error.message : 'حدث خطأ غير متوقع'}`);
+      console.error("Error saving edits:", error);
+      setMessage(`❌ خطأ: ${error instanceof Error ? error.message : 'حدث خطأ غير متوقع'}`);
     } finally {
       setLoading(false);
     }
@@ -637,6 +679,52 @@ export default function EditorDashboard() {
     editor?.commands.setContent("");
     setMessage(null);
   }, [editor, setDraftData, setMessage]);
+
+  const handleImagePaste = useCallback((event: React.ClipboardEvent) => {
+    const items = event.clipboardData.items;
+    for (const item of items) {
+      if (item.type.indexOf('image') !== -1) {
+        event.preventDefault();
+        const file = item.getAsFile();
+        if (file) {
+          const reader = new FileReader();
+          reader.onload = async (e) => {
+            const base64Image = e.target?.result as string;
+            if (base64Image) {
+              try {
+                setMessage("🔄 جاري معالجة الصورة المنسوخة...");
+                const processedImage = await uploadImage(base64Image);
+                if (editor) {
+                  // Create a container div with the desired classes
+                  const imageHtml = `
+                    <div class="image-container">
+                      <img 
+                        src="${processedImage}" 
+                        alt="صورة منسوخة" 
+                        title="صورة منسوخة" 
+                        class="max-w-full h-auto rounded-lg"
+                      />
+                    </div>
+                  `;
+                  
+                  // Insert the HTML at the current cursor position
+                  editor.chain().focus().insertContent(imageHtml).run();
+                  
+                  setMessage("✅ تم إضافة الصورة بنجاح");
+                  setTimeout(() => setMessage(null), 2000);
+                }
+              } catch (error) {
+                console.error('Error handling pasted image:', error);
+                setMessage("❌ فشل معالجة الصورة المنسوخة");
+              }
+            }
+          };
+          reader.readAsDataURL(file);
+        }
+        break;
+      }
+    }
+  }, [editor, uploadImage, setMessage]);
 
   // Early returns
   if (loading) return <LoadingSpinner />;
@@ -704,7 +792,7 @@ export default function EditorDashboard() {
               <div>
                 <label className="block text-sm font-medium text-gray-700 mb-2">المحتوى</label>
                 <div className="border border-gray-300 rounded-lg p-4 min-h-[300px]">
-                  <EditorContent editor={editor} />
+                  <EditorContent editor={editor} onPaste={handleImagePaste} />
                 </div>
               </div>
 
