@@ -2,9 +2,9 @@
 
 import { useEffect, useMemo, useRef, useState, useCallback } from "react";
 import { useSession } from "next-auth/react";
-import { db, storage } from "../lib/firebase";
+import { db } from "../lib/firebase";
 import { collection, doc, onSnapshot, orderBy, query, updateDoc, where } from "firebase/firestore";
-import { getDownloadURL, ref, uploadBytes } from "firebase/storage";
+// Removed storage imports since we're not using Firebase Storage anymore
 import { motion } from "motion/react";
 import LoadingPage from "./LoadingPage";
 import Image from "next/image";
@@ -152,9 +152,17 @@ export default function ProfileDashboard() {
   const onSelectFile = useCallback(async (file?: File) => {
     if (!file || !sessionUser?.id) return;
     
-    // Validate file type
-    if (!file.type.startsWith('image/')) {
-      setMessage('❌ يرجى تحميل ملف صورة صالح');
+    // Validate file type and size (max 2MB)
+    const allowedTypes = ['image/jpeg', 'image/png', 'image/webp'];
+    const maxSize = 2 * 1024 * 1024; // 2MB
+    
+    if (!allowedTypes.includes(file.type)) {
+      setMessage('❌ نوع الملف غير مدعوم. يرجى رفع صورة بصيغة JPG أو PNG أو WebP');
+      return;
+    }
+    
+    if (file.size > maxSize) {
+      setMessage('❌ حجم الملف كبير جداً. الحد الأقصى 2 ميجابايت');
       return;
     }
 
@@ -163,22 +171,14 @@ export default function ProfileDashboard() {
       setMessage('🔄 جاري معالجة الصورة...');
 
       // Compress the image and get base64
-      const { base64, blob } = await compressImage(file);
+      const { base64 } = await compressImage(file);
       
       // Show preview from base64
       setPreviewUrl(base64);
       
-      // Upload the compressed image to Firebase
-      const avatarRef = ref(storage, `avatars/${sessionUser.id}`);
-      await uploadBytes(avatarRef, blob);
-      
-      // Get the download URL
-      const url = await getDownloadURL(avatarRef);
-      
-      // Update user document with both URL and base64
+      // Update user document with base64 only
       await updateDoc(doc(db, "users", sessionUser.id), { 
-        image: url,
-        imageBase64: base64, // Store base64 for faster initial load
+        image: base64, // Store only base64
         updatedAt: new Date().toISOString()
       });
       
@@ -195,14 +195,12 @@ export default function ProfileDashboard() {
     }
   }, [sessionUser?.id, update, compressImage]);
 
-  // Clean up preview URL when component unmounts or previewUrl changes
+  // Clean up preview URL when component unmounts
   useEffect(() => {
     return () => {
-      if (previewUrl) {
-        URL.revokeObjectURL(previewUrl);
-      }
+      // No need to revoke base64 URLs
     };
-  }, [previewUrl]);
+  }, []);
 
   // Update name when session user changes
   useEffect(() => {
