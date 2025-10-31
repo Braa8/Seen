@@ -5,12 +5,89 @@ import { useSession } from "next-auth/react";
 import { FaBold, FaItalic, FaUnderline, FaLink, FaImage, FaListUl, FaListOl } from "react-icons/fa";
 import { db } from "../lib/firebase";
 import { addDoc, collection, serverTimestamp } from "firebase/firestore";
-import { useEditor, EditorContent } from "@tiptap/react";
+import { useEditor, EditorContent} from "@tiptap/react";
+import { mergeAttributes } from '@tiptap/core';
 import StarterKit from "@tiptap/starter-kit";
 import Placeholder from "@tiptap/extension-placeholder";
-import ImageExtension from "@tiptap/extension-image";
+import { Image } from '@tiptap/extension-image';
 import Link from "@tiptap/extension-link";
-import Image from "next/image";
+import NextImage from "next/image";
+
+// Types for our custom image extension
+interface CustomImageOptions {
+  inline: boolean;
+  allowBase64: boolean;
+  HTMLAttributes: {
+    class: string;
+    style: string;
+    [key: string]: string;
+  };
+}
+
+// Type for image attributes
+interface ImageAttributes {
+  src: string;
+  alt?: string;
+  [key: string]: string | undefined;
+}
+
+// Custom Image Extension with better typing
+const CustomImage = Image.extend<CustomImageOptions>({
+  name: 'customImage',
+  addOptions() {
+    return {
+      inline: true,
+      allowBase64: true,
+      HTMLAttributes: {
+        class: 'max-w-full h-auto rounded-lg mx-auto block',
+        style: 'max-height: 500px; width: auto;',
+      },
+    };
+  },
+  
+  addAttributes() {
+    return {
+      src: {
+        default: null,
+        parseHTML: (element: HTMLElement) => element.getAttribute('src'),
+      },
+      alt: {
+        default: '',
+        parseHTML: (element: HTMLElement) => element.getAttribute('alt'),
+      },
+    };
+  },
+
+  renderHTML({ HTMLAttributes }: { HTMLAttributes: Record<string, string> }) {
+    return ['div', { class: 'my-4' }, ['img', mergeAttributes(this.options.HTMLAttributes, HTMLAttributes)]];
+  },
+  
+  addNodeView() {
+    return ({ node, HTMLAttributes }) => {
+      const container = document.createElement('div');
+      container.className = 'my-4';
+      
+      const img = document.createElement('img');
+      const attrs = node.attrs as ImageAttributes;
+      
+      img.src = attrs.src || '';
+      img.alt = attrs.alt || '';
+      img.className = 'max-w-full h-auto rounded-lg mx-auto block';
+      img.style.maxHeight = '500px';
+      img.style.width = 'auto';
+      
+      // Apply any additional HTML attributes
+      Object.entries(HTMLAttributes || {}).forEach(([key, value]) => {
+        if (value !== undefined) {
+          img.setAttribute(key, value);
+        }
+      });
+      
+      container.appendChild(img);
+      return { dom: container };
+    };
+  }
+});
 
 const DRAFT_TTL_MS = 24 * 60 * 60 * 1000; // 24 hours
 
@@ -92,16 +169,28 @@ export default function WriterDashboard({ onPublished }: Props) {
   // Initialize editor
   const editor = useEditor({
     extensions: [
-      StarterKit,
+      StarterKit.configure({
+        heading: {
+          levels: [1, 2, 3],
+        },
+      }),
       Placeholder.configure({
         placeholder: 'اكتب مقالتك هنا...',
       }),
-      ImageExtension,
+      CustomImage,
       Link.configure({
         openOnClick: false,
       }),
     ],
     content: editorContent,
+    editorProps: {
+      attributes: {
+        class: 'prose max-w-none focus:outline-none',
+      },
+    },
+    parseOptions: {
+      preserveWhitespace: false,
+    },
     onUpdate: ({ editor }) => {
       const html = editor.getHTML();
       setEditorContent(html);
@@ -335,7 +424,7 @@ export default function WriterDashboard({ onPublished }: Props) {
             <div className="flex items-center space-x-4">
               {imageUrl ? (
                 <div className="relative w-20 h-20">
-                  <Image
+                  <NextImage
                     src={imageUrl}
                     alt="صورة المنشور"
                     className="w-full h-full object-cover rounded-lg"
