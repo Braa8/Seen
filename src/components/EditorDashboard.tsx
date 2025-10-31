@@ -22,6 +22,7 @@ import Placeholder from "@tiptap/extension-placeholder";
 import ImageExtension from "@tiptap/extension-image";
 import Link from "@tiptap/extension-link";
 import { FaBold, FaItalic, FaUnderline, FaLink, FaImage, FaListUl, FaListOl } from "react-icons/fa";
+import Image from "next/image";
 
 // Constants
 const DRAFT_TTL_MS = 60 * 60 * 1000;
@@ -237,7 +238,7 @@ const useImageUpload = (sessionId: string | undefined) => {
 
       // For larger images, compress them
       return new Promise((resolve, reject) => {
-        const img = new Image();
+        const img = new window.Image();
         const canvas = document.createElement('canvas');
         const ctx = canvas.getContext('2d');
         
@@ -741,10 +742,11 @@ export default function EditorDashboard() {
 
         {/* Editor Form */}
         {draftData.selectedPost && (
-          <div className="bg-white rounded-xl shadow-lg p-6 space-y-4">
+          <div className="bg-white rounded-xl shadow-lg p-6 space-y-6">
             <div className="flex items-center justify-between">
               <h2 className="text-xl font-semibold text-gray-800">تعديل المنشور</h2>
               <button
+                type="button"
                 onClick={resetEditor}
                 className="text-gray-500 hover:text-gray-700"
               >
@@ -755,42 +757,104 @@ export default function EditorDashboard() {
             <MessageAlert message={message} />
 
             {/* Form Fields */}
-            <div>
-              <label className="block text-sm font-medium text-gray-700 mb-2">العنوان</label>
-              <input
-                className="w-full border border-gray-300 p-3 rounded-lg focus:outline-none focus:ring-2 focus:ring-purple-500"
-                value={draftData.title}
-                onChange={(e) => setDraftData(prev => ({ ...prev, title: e.target.value }))}
-              />
-            </div>
-
-            <div>
-              <label className="block text-sm font-medium text-gray-700 mb-2">المقتطف</label>
-              <textarea
-                className="w-full border border-gray-300 p-3 rounded-lg focus:outline-none focus:ring-2 focus:ring-purple-500"
-                rows={3}
-                value={draftData.excerpt}
-                onChange={(e) => setDraftData(prev => ({ ...prev, excerpt: e.target.value }))}
-              />
-            </div>
-
-            <div>
-              <label className="block text-sm font-medium text-gray-700 mb-2">القسم</label>
-              <select
-                className="w-full border border-gray-300 p-3 rounded-lg focus:outline-none focus:ring-2 focus:ring-purple-500 bg-white mb-4"
-                value={draftData.category}
-                onChange={(e) => setDraftData(prev => ({ ...prev, category: e.target.value }))}
-              >
-                <option value="">اختر القسم</option>
-                {EDITOR_CATEGORIES.map((cat) => (
-                  <option key={cat} value={cat}>{cat}</option>
-                ))}
-              </select>
-              
-              <EditorToolbar editor={editor} />
+            <div className="space-y-6">
+              <div>
+                <label className="block text-sm font-medium text-gray-700 mb-1">العنوان</label>
+                <input
+                  type="text"
+                  className="w-full border border-gray-300 rounded-lg p-2 focus:ring-2 focus:ring-purple-500 focus:border-transparent"
+                  value={draftData.title}
+                  onChange={(e) => setDraftData(prev => ({ ...prev, title: e.target.value }))}
+                />
+              </div>
 
               <div>
-                <label className="block text-sm font-medium text-gray-700 mb-2">المحتوى</label>
+                <label className="block text-sm font-medium text-gray-700 mb-1">الصورة الرئيسية</label>
+                <div className="flex items-center space-x-4">
+                  {draftData.imageUrl ? (
+                    <div className="relative w-20 h-20">
+                      <Image
+                        src={draftData.imageUrl}
+                        alt="صورة المنشور"
+                        className="w-full h-full object-cover rounded-lg"
+                      />
+                      <button
+                        type="button"
+                        onClick={() => setDraftData(prev => ({ ...prev, imageUrl: '' }))}
+                        className="absolute -top-2 -right-2 bg-red-500 text-white rounded-full w-5 h-5 flex items-center justify-center text-xs hover:bg-red-600"
+                        title="حذف الصورة"
+                      >
+                        ×
+                      </button>
+                    </div>
+                  ) : (
+                    <div className="w-20 h-20 border-2 border-dashed border-gray-300 rounded-lg flex items-center justify-center">
+                      <FaImage className="text-gray-400" />
+                    </div>
+                  )}
+                  <label className="flex-1">
+                    <div className="px-4 py-2 bg-white text-purple-600 rounded-lg border-2 border-dashed border-purple-300 cursor-pointer hover:bg-purple-50 text-center">
+                      {draftData.imageUrl ? 'تغيير الصورة' : 'اختر صورة'}
+                    </div>
+                    <input
+                      type="file"
+                      className="hidden"
+                      accept="image/*"
+                      onChange={async (e) => {
+                        const file = e.target.files?.[0];
+                        if (file) {
+                          try {
+                            setMessage('🔄 جاري معالجة الصورة...');
+                            const reader = new FileReader();
+                            reader.onload = async (e) => {
+                              const base64Image = e.target?.result as string;
+                              if (base64Image) {
+                                const processedImage = await uploadImage(base64Image);
+                                setDraftData(prev => ({ ...prev, imageUrl: processedImage }));
+                                setMessage('✅ تم تحميل الصورة بنجاح');
+                                setTimeout(() => setMessage(null), 2000);
+                              }
+                            };
+                            reader.readAsDataURL(file);
+                          } catch (error) {
+                            console.error('Error processing image:', error);
+                            setMessage('❌ فشل تحميل الصورة');
+                          }
+                        }
+                      }}
+                    />
+                  </label>
+                </div>
+              </div>
+
+              <div>
+                <label className="block text-sm font-medium text-gray-700 mb-1">القسم</label>
+                <select
+                  className="w-full border border-gray-300 rounded-lg p-2 focus:ring-2 focus:ring-purple-500 focus:border-transparent"
+                  value={draftData.category}
+                  onChange={(e) => setDraftData(prev => ({ ...prev, category: e.target.value }))}
+                >
+                  <option value="">اختر القسم</option>
+                  {EDITOR_CATEGORIES.map((cat) => (
+                    <option key={cat} value={cat}>{cat}</option>
+                  ))}
+                </select>
+              </div>
+
+              <div>
+                <label className="block text-sm font-medium text-gray-700 mb-1">الملخص</label>
+                <textarea
+                  className="w-full border border-gray-300 rounded-lg p-2 h-24 focus:ring-2 focus:ring-purple-500 focus:border-transparent"
+                  value={draftData.excerpt}
+                  onChange={(e) => setDraftData(prev => ({ ...prev, excerpt: e.target.value }))}
+                />
+              </div>
+
+              <div>
+                <div className="flex justify-between items-center mb-1">
+                  <label className="block text-sm font-medium text-gray-700">المحتوى</label>
+                  <EditorToolbar editor={editor} />
+                </div>
                 <div className="border border-gray-300 rounded-lg p-4 min-h-[300px]">
                   <EditorContent editor={editor} onPaste={handleImagePaste} />
                 </div>
