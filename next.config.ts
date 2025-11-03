@@ -50,12 +50,11 @@ const nextConfig: NextConfig = {
   // إعدادات الأداء
   experimental: {
     largePageDataBytes: 512 * 1000, // 512KB
-    optimizeCss: true,
+    optimizeCss: false, // Disabled to avoid critters dependency
     scrollRestoration: true,
     optimizePackageImports: ['react-icons', 'lodash'],
-    serverComponentsExternalPackages: ['sharp', 'onnxruntime-node'],
+    // Removed serverComponentsExternalPackages to avoid potential build issues
     workerThreads: false,
-    cpus: 4,
   },
 };
 
