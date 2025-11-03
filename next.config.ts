@@ -1,36 +1,61 @@
+// next.config.ts
 import type { NextConfig } from "next";
 
 const nextConfig: NextConfig = {
-  // إضافة إعدادات الرؤوس
-  async headers() {
-    return [
-      {
-        source: '/(.*)',
-        headers: [
-          {
-            key: 'x-vercel-buffer-request',
-            value: 'true'
-          }
-        ]
-      }
-    ]
+  // تعطيل تحسين الصور المدمج
+  images: {
+    unoptimized: true,
   },
-  // الإعدادات الحالية
+
+  // تعطيل خريطة المصدر في الإنتاج
+  productionBrowserSourceMaps: false,
+
+  // إعدادات Webpack
   webpack: (config) => {
     config.resolve = config.resolve || {};
     config.resolve.alias = {
       ...(config.resolve.alias || {}),
       "pdfjs-dist/build/pdf.worker.entry": "pdfjs-dist/legacy/build/pdf.worker.mjs",
     };
+
+    // تحسين حجم الحزمة
+    if (process.env.NODE_ENV === 'production') {
+      config.optimization.minimize = true;
+      config.optimization.splitChunks = {
+        chunks: 'all',
+        maxSize: 244 * 1024, // 244KB
+      };
+    }
+
     return config;
   },
-  // إضافة إعدادات إضافية
+
+  // تعطيل ETag
+  generateEtags: false,
+
+  // ضغط Gzip
   compress: true,
+
+  // إعدادات إضافية
   poweredByHeader: false,
   reactStrictMode: true,
-  // زيادة حجم الرؤوس المسموح به
+  swcMinify: true,
+  output: 'standalone',
+  staticPageGenerationTimeout: 1000,
+  trailingSlash: false,
+  skipTrailingSlashRedirect: true,
+  skipMiddlewareUrlNormalize: true,
+  skipInterceptionRewrites: true,
+  
+  // إعدادات الأداء
   experimental: {
-    largePageDataBytes: 256 * 1000, // 256KB
+    largePageDataBytes: 512 * 1000, // 512KB
+    optimizeCss: true,
+    scrollRestoration: true,
+    optimizePackageImports: ['react-icons', 'lodash'],
+    serverComponentsExternalPackages: ['sharp', 'onnxruntime-node'],
+    workerThreads: false,
+    cpus: 4,
   },
 };
 
