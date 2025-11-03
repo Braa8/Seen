@@ -1,3 +1,4 @@
+// src/lib/authOptions.js
 import { type NextAuthOptions, type User } from "next-auth";
 import CredentialsProvider from "next-auth/providers/credentials";
 import { FirestoreAdapter } from "@auth/firebase-adapter";
@@ -17,6 +18,7 @@ const adapter = FirestoreAdapter({
 });
 
 export const authOptions: NextAuthOptions = {
+  adapter,
   providers: [
     CredentialsProvider({
       name: "Credentials",
@@ -28,11 +30,9 @@ export const authOptions: NextAuthOptions = {
         if (!credentials?.email || !credentials.password) return null;
 
         const apiKey = process.env.NEXT_PUBLIC_FIREBASE_API_KEY;
-        if (!apiKey) {
-          console.error("Missing NEXT_PUBLIC_FIREBASE_API_KEY for password verification");
-          return null;
-        }
+        if (!apiKey) return null;
 
+        // تسجيل الدخول عبر Firebase REST API
         const res = await fetch(
           `https://identitytoolkit.googleapis.com/v1/accounts:signInWithPassword?key=${apiKey}`,
           {
@@ -46,13 +46,11 @@ export const authOptions: NextAuthOptions = {
           }
         );
 
-        if (!res.ok) {
-          return null;
-        }
+        if (!res.ok) return null;
+        const authData = await res.json();
+        if (!authData.localId || !authData.email) return null;
 
-        const authData = (await res.json()) as { localId?: string; email?: string; idToken?: string };
-        if (!authData.localId || !authData.email || !authData.idToken) return null;
-
+        // التحقق من أن البريد مفعّل
         const lookupRes = await fetch(
           `https://identitytoolkit.googleapis.com/v1/accounts:lookup?key=${apiKey}`,
           {
@@ -61,53 +59,56 @@ export const authOptions: NextAuthOptions = {
             body: JSON.stringify({ idToken: authData.idToken }),
           }
         );
-        if (!lookupRes.ok) return null;
-        const lookup = (await lookupRes.json()) as { users?: Array<{ emailVerified?: boolean }> };
-        const emailVerified = lookup.users?.[0]?.emailVerified === true;
-        if (!emailVerified) {
-          return null;
-        }
 
-        return {
-          id: authData.localId,
-          email: authData.email,
-        } as User;
+        if (!lookupRes.ok) return null;
+        const lookup = await lookupRes.json();
+        const verified = lookup?.users?.[0]?.emailVerified === true;
+        if (!verified) return null;
+
+        return { id: authData.localId, email: authData.email } as User;
       },
     }),
   ],
-  adapter,
+
   session: {
     strategy: "jwt",
-    maxAge: 60 * 60 * 24 * 30,
-    updateAge: 60 * 60 * 24,
+    maxAge: 60 * 60 * 24 * 7, // أسبوع
   },
+
+  debug: process.env.NODE_ENV === "development",
+  useSecureCookies: process.env.NODE_ENV === "production",
+
   callbacks: {
     async jwt({ token, user }) {
       if (user) {
         token.id = user.id;
-      }
 
-      if (token.id) {
-        const db = getFirestore();
-        const userDoc = await db.collection("users").doc(String(token.id)).get();
-        const data = userDoc.exists
-          ? (userDoc.data() as { roles?: string[]; name?: string | null; image?: string | null })
-          : undefined;
-        const rolesFromDb = data?.roles || ["viewer"];
-        token.roles = Array.isArray(rolesFromDb) ? rolesFromDb : ["viewer"];
-        if (data?.name !== undefined) token.name = data.name || undefined;
-        if (data?.image !== undefined) (token as { image?: string }).image = data.image || undefined;
-      }
+        try {
+          const db = getFirestore();
+          const userDoc = await db.collection("users").doc(String(user.id)).get();
 
+          if (userDoc.exists) {
+            const data = userDoc.data();
+            if (data && Array.isArray(data.roles) && data.roles.length > 0) {
+              token.roles = data.roles;
+            } else {
+              token.roles = ["viewer"];
+            }
+          } else {
+            token.roles = ["viewer"];
+          }
+        } catch (error) {
+          console.error("Error fetching user roles:", error);
+          token.roles = ["viewer"];
+        }
+      }
       return token;
     },
+
     async session({ session, token }) {
       if (session.user) {
-        session.user.id = token.id || "";
-        session.user.roles = Array.isArray(token.roles) ? token.roles : ["viewer"];
-        if (typeof token.name === "string") session.user.name = token.name;
-        const image = (token as { image?: string }).image;
-        if (typeof image === "string") (session.user as { image?: string | null }).image = image;
+        session.user.id = token.id;
+        session.user.roles = token.roles || ["viewer"];
       }
       return session;
     },
