@@ -30,7 +30,7 @@ export default function RegisterPage() {
       } else {
         setIsError(false);
         setMessage("تم إنشاء الحساب بنجاح! جاري التحويل...");
-        setTimeout(() => router.push("/login"), 2000);
+        setTimeout(() => router.push("/Posts"), 2000);
       }
     } catch {
       setIsError(true);

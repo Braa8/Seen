@@ -4,7 +4,7 @@ import { useSession } from "next-auth/react";
 import { useRouter } from "next/navigation";
 import { useEditor, EditorContent } from "@tiptap/react";
 import StarterKit from "@tiptap/starter-kit";
-import Image from "@tiptap/extension-image";
+import TiptapImage from "@tiptap/extension-image";
 import Link from "@tiptap/extension-link";
 import Placeholder from "@tiptap/extension-placeholder";
 import toast from "react-hot-toast";
@@ -29,7 +29,7 @@ export default function WriterPage() {
   const editor = useEditor({
     extensions: [
       StarterKit,
-      Image,
+      TiptapImage,
       Link.configure({ openOnClick: false }),
       Placeholder.configure({ placeholder: "ابدأ الكتابة هنا..." }),
     ],
@@ -119,7 +119,14 @@ export default function WriterPage() {
   const statusLabel: Record<string, string> = { draft: "مسودة", pending: "قيد المراجعة", published: "منشور", rejected: "مرفوض" };
   const statusColor: Record<string, string> = { draft: "bg-slate-100 text-slate-600", pending: "bg-yellow-100 text-yellow-700", published: "bg-green-100 text-green-700", rejected: "bg-red-100 text-red-600" };
 
-  if (status === "loading") return <div className="min-h-screen bg-slate-50"><Navbar /><div className="flex justify-center py-40"><div className="w-10 h-10 border-4 border-sky-200 border-t-sky-600 rounded-full animate-spin" /></div></div>;
+  if (status === "loading") return (
+    <div className="min-h-screen bg-slate-50">
+      <Navbar />
+      <div className="flex justify-center py-40">
+        <div className="w-10 h-10 border-4 border-sky-200 border-t-sky-600 rounded-full animate-spin" />
+      </div>
+    </div>
+  );
 
   return (
     <div className="min-h-screen bg-slate-50">
@@ -132,7 +139,6 @@ export default function WriterPage() {
           </button>
         </div>
 
-        {/* Editor */}
         {showEditor && (
           <div className="bg-white rounded-2xl shadow-sm border border-slate-100 p-6 mb-8">
             <div className="flex items-center justify-between mb-6">
@@ -156,11 +162,11 @@ export default function WriterPage() {
                 <label className="text-sm text-slate-600 mb-1 block">صورة المقال (اختياري)</label>
                 <input type="file" accept="image/*" onChange={handleImageUpload}
                   className="text-sm text-slate-600 file:mr-3 file:py-1 file:px-3 file:rounded file:border-0 file:bg-sky-50 file:text-sky-700 file:cursor-pointer" />
+                {/* eslint-disable-next-line @next/next/no-img-element */}
                 {featuredImage && <img src={featuredImage} alt="" className="mt-2 h-24 rounded-lg object-cover" />}
               </div>
 
               <div className="border border-slate-200 rounded-lg overflow-hidden">
-                {/* Toolbar */}
                 <div className="flex gap-1 p-2 bg-slate-50 border-b border-slate-200 flex-wrap">
                   {[
                     { label: "B", action: () => editor?.chain().focus().toggleBold().run(), active: editor?.isActive("bold") },
@@ -191,13 +197,12 @@ export default function WriterPage() {
           </div>
         )}
 
-        {/* Posts list */}
         {loading ? (
           <div className="text-center py-20 text-slate-400">جاري التحميل...</div>
         ) : posts.length === 0 ? (
           <div className="text-center py-20 text-slate-400">
             <p className="text-xl mb-2">لا توجد مقالات بعد</p>
-            <p className="text-sm">اضغط على "+ مقال جديد" للبدء</p>
+            <p className="text-sm">أضف مقالاً</p>
           </div>
         ) : (
           <div className="space-y-4">

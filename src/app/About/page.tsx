@@ -1,12 +1,12 @@
 import Navbar from "@/components/Navbar";
-
+import Image from "next/image";
 export default function AboutPage() {
   return (
     <div className="min-h-screen bg-slate-50">
       <Navbar />
       <div className="max-w-3xl mx-auto px-4 py-16">
         <div className="text-center mb-12">
-          <h1 className="text-6xl font-black text-sky-600 mb-4">سين</h1>
+          <Image src="logo.png" alt = "logo" width={200} height={100}/>
           <p className="text-2xl text-slate-600 font-light">لأن الصحافة سؤال</p>
         </div>
 

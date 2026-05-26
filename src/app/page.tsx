@@ -1,6 +1,7 @@
 import Link from "next/link";
 import Navbar from "@/components/Navbar";
 import { adminDb } from "@/lib/firebaseAdmin";
+import Image from "next/image";
 
 async function getRecentPosts() {
   try {
@@ -33,10 +34,15 @@ export default async function HomePage() {
       <Navbar />
 
       {/* Hero */}
-      <section className="bg-gradient-to-br from-sky-900 via-sky-800 to-sky-600 text-white py-24 px-4">
+      <section className="bg-gradient-to-br from-sky-950 via-sky-900 to-sky-950 text-white py-24 px-4">
         <div className="max-w-4xl mx-auto text-center">
-          <div className="text-8xl font-black mb-4 opacity-20 select-none">س</div>
-          <h1 className="text-5xl md:text-7xl font-black mb-6 -mt-16">سين</h1>
+          <div className="flex flex-col justify-center items-center m-3">
+            <Image
+             src="/logo.png" 
+             alt="سين" 
+             width={200}
+             height={100} />
+          </div>
           <p className="text-xl md:text-2xl text-sky-200 mb-4">لأن الصحافة سؤال</p>
           <p className="text-sky-300 mb-10 max-w-lg mx-auto">
             منصة صحفية عربية تجمع الكتّاب والمحررين والقراء في فضاء واحد
