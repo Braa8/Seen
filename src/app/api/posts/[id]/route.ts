@@ -2,6 +2,7 @@ import { NextRequest, NextResponse } from "next/server";
 import { getServerSession } from "next-auth";
 import { authOptions } from "@/lib/authOptions";
 import { adminDb, adminFieldValue } from "@/lib/firebaseAdmin";
+import { sanitizePostHtml } from "@/lib/sanitizePostHtml";
 
 type Params = {
   params: {
@@ -176,12 +177,18 @@ export async function GET(
       }
     }
 
+    const sanitizedPost = {
+      id: snapshot.id,
+      ...post,
+      content:
+        typeof post.content === "string"
+          ? sanitizePostHtml(post.content)
+          : "",
+    };
+
     return NextResponse.json({
       success: true,
-      post: {
-        id: snapshot.id,
-        ...post,
-      },
+      post: sanitizedPost,
     });
   } catch (error) {
     console.error("GET /api/posts/[id]:", error);
@@ -295,8 +302,21 @@ export async function PUT(
         );
       }
 
-      updates[field] =
-        typeof value === "string" ? value.trim() : value;
+      if (field === "content" && typeof value === "string") {
+        const sanitizedContent = sanitizePostHtml(value);
+
+        if (!sanitizedContent.trim()) {
+          return errorResponse(
+            "محتوى المقال فارغ أو يحتوي على عناصر غير مسموحة",
+            400
+          );
+        }
+
+        updates[field] = sanitizedContent;
+      } else {
+        updates[field] =
+          typeof value === "string" ? value.trim() : value;
+      }
     }
 
     let nextStatus = currentStatus;

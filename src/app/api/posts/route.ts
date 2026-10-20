@@ -2,6 +2,7 @@ import { NextRequest, NextResponse } from "next/server";
 import { getServerSession } from "next-auth";
 import { authOptions } from "@/lib/authOptions";
 import { adminDb, adminFieldValue } from "@/lib/firebaseAdmin";
+import { sanitizePostHtml } from "@/lib/sanitizePostHtml";
 import type { Query } from "firebase-admin/firestore";
 
 type PostStatus = "draft" | "pending" | "published" | "rejected";
@@ -160,10 +161,18 @@ export async function GET(request: NextRequest) {
 
     const snapshot = await query.get();
 
-    const posts = snapshot.docs.map((doc) => ({
-      id: doc.id,
-      ...doc.data(),
-    }));
+    const posts = snapshot.docs.map((doc) => {
+      const data = doc.data();
+
+      return {
+        id: doc.id,
+        ...data,
+        content:
+          typeof data.content === "string"
+            ? sanitizePostHtml(data.content)
+            : "",
+      };
+    });
 
     return NextResponse.json({
       success: true,
@@ -273,6 +282,15 @@ export async function POST(request: NextRequest) {
 
     const canReview = isEditorOrAdmin(user.roles);
 
+    const sanitizedContent = sanitizePostHtml(content);
+
+    if (!sanitizedContent.trim()) {
+      return errorResponse(
+        "محتوى المقال فارغ أو يحتوي على عناصر غير مسموحة",
+        400
+      );
+    }
+
     // لا يُسمح بإنشاء مقال مرفوض مباشرة.
     if (status === "rejected") {
       return errorResponse(
@@ -293,10 +311,10 @@ export async function POST(request: NextRequest) {
 
     const docRef = await adminDb.collection("posts").add({
       title: title.trim(),
-      content: content.trim(),
+      content: sanitizedContent,
       excerpt:
         excerpt.trim() ||
-        content.trim().substring(0, 150) + "...",
+        sanitizedContent.substring(0, 150) + "...",
       category: category.trim(),
       tags: tags.map((tag: string) => tag.trim()),
       featuredImage: featuredImage.trim(),

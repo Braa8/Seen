@@ -27,15 +27,10 @@ async function canExtractDocuments(userId: string): Promise<boolean> {
     return false;
   }
 
-  const roles: unknown[] = Array.isArray(userData.roles)
-    ? userData.roles
-    : [];
+  const roles: unknown[] = Array.isArray(userData.roles) ? userData.roles : [];
 
   return roles.some(
-    (role) =>
-      role === "writer" ||
-      role === "editor" ||
-      role === "admin"
+    (role) => role === "writer" || role === "editor" || role === "admin",
   );
 }
 
@@ -50,7 +45,7 @@ export async function POST(request: NextRequest) {
     if (!userId) {
       return NextResponse.json(
         { error: "يجب تسجيل الدخول أولاً" },
-        { status: 401 }
+        { status: 401 },
       );
     }
 
@@ -60,7 +55,7 @@ export async function POST(request: NextRequest) {
     if (!allowed) {
       return NextResponse.json(
         { error: "ليست لديك صلاحية استيراد المستندات" },
-        { status: 403 }
+        { status: 403 },
       );
     }
 
@@ -75,47 +70,41 @@ export async function POST(request: NextRequest) {
     ) {
       return NextResponse.json(
         { error: "يرجى اختيار ملف Word أو PDF صالح" },
-        { status: 400 }
+        { status: 400 },
       );
     }
 
     if (file.size === 0) {
-      return NextResponse.json(
-        { error: "الملف فارغ" },
-        { status: 400 }
-      );
+      return NextResponse.json({ error: "الملف فارغ" }, { status: 400 });
     }
 
     if (file.size > MAX_FILE_SIZE) {
       return NextResponse.json(
         { error: "حجم الملف يتجاوز الحد المسموح وهو 4MB" },
-        { status: 400 }
+        { status: 400 },
       );
     }
 
-    const extension = file.name
-      .split(".")
-      .pop()
-      ?.toLowerCase();
+    const extension = file.name.split(".").pop()?.toLowerCase();
 
     if (extension !== "docx" && extension !== "pdf") {
       return NextResponse.json(
         { error: "الصيغ المدعومة حالياً هي DOCX وPDF فقط" },
-        { status: 400 }
+        { status: 400 },
       );
     }
 
     if (extension === "docx" && file.type !== DOCX_TYPE) {
       return NextResponse.json(
         { error: "نوع ملف Word غير صالح" },
-        { status: 400 }
+        { status: 400 },
       );
     }
 
     if (extension === "pdf" && file.type !== "application/pdf") {
       return NextResponse.json(
         { error: "نوع ملف PDF غير صالح" },
-        { status: 400 }
+        { status: 400 },
       );
     }
 
@@ -129,7 +118,7 @@ export async function POST(request: NextRequest) {
       if (signature !== "%PDF-") {
         return NextResponse.json(
           { error: "محتوى الملف لا يتطابق مع صيغة PDF" },
-          { status: 400 }
+          { status: 400 },
         );
       }
     }
@@ -165,11 +154,13 @@ export async function POST(request: NextRequest) {
           error:
             "لم يتم العثور على نص قابل للاستخراج. قد يكون ملف PDF ممسوحاً ضوئياً ويحتاج إلى OCR.",
         },
-        { status: 422 }
+        { status: 422 },
       );
     }
 
-    if (extractedText.length > MAX_TEXT_LENGTH) {
+    const wasTruncated = extractedText.length > MAX_TEXT_LENGTH;
+
+    if (wasTruncated) {
       extractedText = extractedText.slice(0, MAX_TEXT_LENGTH);
     }
 
@@ -177,7 +168,7 @@ export async function POST(request: NextRequest) {
       success: true,
       text: extractedText,
       fileName: file.name,
-      truncated: extractedText.length >= MAX_TEXT_LENGTH,
+      truncated: wasTruncated,
     });
   } catch (error) {
     console.error("Document text extraction error:", error);
@@ -187,7 +178,7 @@ export async function POST(request: NextRequest) {
         error:
           "تعذر استخراج النص من الملف. تأكد من سلامة المستند وحاول مجدداً.",
       },
-      { status: 500 }
+      { status: 500 },
     );
   } finally {
     if (pdfParser) {
