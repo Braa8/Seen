@@ -45,6 +45,7 @@
     "typescript": "5.7.3"
   },
   "overrides": {
-    "jsdom": "25.0.1"
+    "jsdom": "25.0.1",
+    "html-encoding-sniffer": "4.0.0"
   }
 }
