@@ -3,6 +3,8 @@ import { getServerSession } from "next-auth";
 import { authOptions } from "@/lib/authOptions";
 import { adminDb, adminFieldValue } from "@/lib/firebaseAdmin";
 import { sanitizePostHtml } from "@/lib/sanitizePostHtml";
+import { getFirebaseApiUser } from "@/lib/apiAuth";
+import { request } from "http";
 
 type Params = {
   params: {
@@ -39,34 +41,49 @@ function errorResponse(message: string, status: number) {
   return NextResponse.json({ error: message }, { status });
 }
 
-async function getCurrentUser() {
+async function getCurrentUser(request: NextRequest) {
+  // Preserve the website's existing NextAuth authentication.
   const session = await getServerSession(authOptions);
 
-  if (!session?.user?.id) {
-    return null;
+  if (session?.user?.id) {
+    const userDoc = await adminDb
+      .collection("users")
+      .doc(session.user.id)
+      .get();
+
+    if (!userDoc.exists) {
+      return null;
+    }
+
+    const data = userDoc.data();
+
+    if (!data || data.isActive === false) {
+      return null;
+    }
+
+    const roles: string[] = Array.isArray(data.roles)
+      ? data.roles.filter(
+          (role: unknown): role is string =>
+            typeof role === "string"
+        )
+      : [];
+
+    return {
+      id: session.user.id,
+      roles,
+    };
   }
 
-  const userDoc = await adminDb
-    .collection("users")
-    .doc(session.user.id)
-    .get();
+  // Support Flutter through Firebase Authentication.
+  const firebaseUser = await getFirebaseApiUser(request);
 
-  if (!userDoc.exists) {
+  if (!firebaseUser) {
     return null;
   }
-
-  const data = userDoc.data();
-
-  const roles: string[] = Array.isArray(data?.roles)
-    ? data.roles.filter(
-        (role: unknown): role is string =>
-          typeof role === "string"
-      )
-    : [];
 
   return {
-    id: session.user.id,
-    roles,
+    id: firebaseUser.uid,
+    roles: firebaseUser.roles,
   };
 }
 
@@ -147,7 +164,7 @@ async function notifyEditors(
 // ========================================
 
 export async function GET(
-  _request: NextRequest,
+  request: NextRequest,
   { params }: Params
 ) {
   try {
@@ -161,7 +178,7 @@ export async function GET(
     const post = snapshot.data() as PostData;
 
     if (post.status !== "published") {
-      const user = await getCurrentUser();
+      const user = await getCurrentUser(request);
 
       const isAuthor =
         Boolean(user?.id) && post.authorId === user?.id;
@@ -209,7 +226,7 @@ export async function PUT(
   { params }: Params
 ) {
   try {
-    const user = await getCurrentUser();
+    const user = await getCurrentUser(request);
 
     if (!user) {
       return errorResponse(
@@ -490,11 +507,11 @@ export async function PUT(
 // ========================================
 
 export async function DELETE(
-  _request: NextRequest,
+  request: NextRequest,
   { params }: Params
 ) {
   try {
-    const user = await getCurrentUser();
+    const user = await getCurrentUser(request);
 
     if (!user) {
       return errorResponse(

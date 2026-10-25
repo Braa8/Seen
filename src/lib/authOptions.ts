@@ -1,6 +1,13 @@
-import { NextAuthOptions } from "next-auth";
+import type { NextAuthOptions } from "next-auth";
 import CredentialsProvider from "next-auth/providers/credentials";
-import { adminAuth, adminDb } from "@/lib/firebaseAdmin";
+import { adminDb } from "@/lib/firebaseAdmin";
+
+const ALLOWED_ROLES = new Set([
+  "viewer",
+  "writer",
+  "editor",
+  "admin",
+]);
 
 export const authOptions: NextAuthOptions = {
   providers: [
@@ -10,45 +17,92 @@ export const authOptions: NextAuthOptions = {
         email: { label: "Email", type: "email" },
         password: { label: "Password", type: "password" },
       },
+
       async authorize(credentials) {
-        if (!credentials?.email || !credentials?.password) return null;
+        const email = credentials?.email?.trim();
+        const password = credentials?.password;
+
+        if (!email || !password) {
+          return null;
+        }
 
         try {
           const apiKey = process.env.NEXT_PUBLIC_FIREBASE_API_KEY;
-          if (!apiKey) throw new Error("Missing Firebase API key");
 
-          const res = await fetch(
+          if (!apiKey) {
+            throw new Error("Missing NEXT_PUBLIC_FIREBASE_API_KEY");
+          }
+
+          const response = await fetch(
             `https://identitytoolkit.googleapis.com/v1/accounts:signInWithPassword?key=${apiKey}`,
             {
               method: "POST",
-              headers: { "Content-Type": "application/json" },
+              headers: {
+                "Content-Type": "application/json",
+              },
               body: JSON.stringify({
-                email: credentials.email,
-                password: credentials.password,
+                email,
+                password,
                 returnSecureToken: true,
               }),
+              cache: "no-store",
             }
           );
 
-          if (!res.ok) return null;
+          if (!response.ok) {
+            return null;
+          }
 
-          const data = await res.json() as {
+          const firebaseUser = (await response.json()) as {
             localId?: string;
             email?: string;
-            emailVerified?: boolean;
           };
 
-          if (!data.localId || !data.email) return null;
+          if (!firebaseUser.localId || !firebaseUser.email) {
+            return null;
+          }
 
-          // Fetch roles from Firestore
-          const userDoc = await adminDb.collection("users").doc(data.localId).get();
-          const roles: string[] = userDoc.exists
-            ? (userDoc.data()?.roles ?? ["viewer"])
-            : ["viewer"];
+          const userDoc = await adminDb
+            .collection("users")
+            .doc(firebaseUser.localId)
+            .get();
+
+          // يجب أن يكون للمستخدم مستند في Firestore.
+          if (!userDoc.exists) {
+            return null;
+          }
+
+          const userData = userDoc.data();
+
+          // رفض الحسابات المعطلة.
+          if (!userData || userData.isActive === false) {
+            return null;
+          }
+
+          let roles: string[];
+
+          if (userData.roles === undefined) {
+            // دعم الحسابات القديمة التي لا تحتوي على حقل roles.
+            roles = ["viewer"];
+          } else {
+            if (
+              !Array.isArray(userData.roles) ||
+              userData.roles.length === 0 ||
+              !userData.roles.every(
+                (role: unknown) =>
+                  typeof role === "string" &&
+                  ALLOWED_ROLES.has(role)
+              )
+            ) {
+              return null;
+            }
+
+            roles = userData.roles;
+          }
 
           return {
-            id: data.localId,
-            email: data.email,
+            id: firebaseUser.localId,
+            email: firebaseUser.email,
             roles,
           };
         } catch (error) {
@@ -59,9 +113,15 @@ export const authOptions: NextAuthOptions = {
     }),
   ],
 
-  session: { strategy: "jwt", maxAge: 60 * 60 * 24 * 7 },
+  session: {
+    strategy: "jwt",
+    maxAge: 60 * 60 * 24 * 7,
+  },
 
-  pages: { signIn: "/login", error: "/login" },
+  pages: {
+    signIn: "/login",
+    error: "/login",
+  },
 
   callbacks: {
     async jwt({ token, user }) {
@@ -69,13 +129,17 @@ export const authOptions: NextAuthOptions = {
         token.id = user.id;
         token.roles = user.roles ?? ["viewer"];
       }
+
       return token;
     },
+
     async session({ session, token }) {
       if (session.user) {
         session.user.id = token.id as string;
-        session.user.roles = (token.roles as string[]) ?? ["viewer"];
+        session.user.roles =
+          (token.roles as string[]) ?? ["viewer"];
       }
+
       return session;
     },
   },

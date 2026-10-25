@@ -4,6 +4,7 @@ import { authOptions } from "@/lib/authOptions";
 import { adminDb, adminFieldValue } from "@/lib/firebaseAdmin";
 import { sanitizePostHtml } from "@/lib/sanitizePostHtml";
 import type { Query } from "firebase-admin/firestore";
+import { getFirebaseApiUser } from "@/lib/apiAuth";
 
 type PostStatus = "draft" | "pending" | "published" | "rejected";
 
@@ -18,36 +19,63 @@ function errorResponse(message: string, status: number) {
   return NextResponse.json({ error: message }, { status });
 }
 
-async function getCurrentUser() {
+async function getCurrentUser(request: NextRequest) {
+  // Preserve the website's existing NextAuth authentication.
   const session = await getServerSession(authOptions);
 
-  if (!session?.user?.id) {
+  if (session?.user?.id) {
+    const userDoc = await adminDb
+      .collection("users")
+      .doc(session.user.id)
+      .get();
+
+    if (!userDoc.exists) {
+      return null;
+    }
+
+    const data = userDoc.data();
+
+    if (!data || data.isActive === false) {
+      return null;
+    }
+
+    const roles: string[] = Array.isArray(data.roles)
+      ? data.roles.filter(
+          (role: unknown): role is string =>
+            typeof role === "string"
+        )
+      : [];
+
+    return {
+      id: session.user.id,
+      name: session.user.name,
+      email: session.user.email,
+      roles,
+    };
+  }
+
+  // Support authenticated Flutter requests.
+  const firebaseUser = await getFirebaseApiUser(request);
+
+  if (!firebaseUser) {
     return null;
   }
 
   const userDoc = await adminDb
     .collection("users")
-    .doc(session.user.id)
+    .doc(firebaseUser.uid)
     .get();
-
-  if (!userDoc.exists) {
-    return null;
-  }
 
   const data = userDoc.data();
 
-  const roles: string[] = Array.isArray(data?.roles)
-    ? data.roles.filter(
-        (role: unknown): role is string =>
-          typeof role === "string"
-      )
-    : [];
-
   return {
-    id: session.user.id,
-    name: session.user.name,
-    email: session.user.email,
-    roles,
+    id: firebaseUser.uid,
+    name:
+      typeof data?.displayName === "string"
+        ? data.displayName
+        : null,
+    email: firebaseUser.email,
+    roles: firebaseUser.roles,
   };
 }
 
@@ -82,6 +110,25 @@ function parseLimit(value: string | null): number {
   return Math.min(parsed, 100);
 }
 
+function createExcerpt(html: string, maxLength = 150): string {
+  const plainText = html
+    .replace(/<[^>]*>/g, " ")
+    .replace(/&nbsp;|&#160;/gi, " ")
+    .replace(/&amp;/gi, "&")
+    .replace(/&lt;/gi, "<")
+    .replace(/&gt;/gi, ">")
+    .replace(/&quot;/gi, '"')
+    .replace(/&#39;|&#x27;/gi, "'")
+    .replace(/\s+/g, " ")
+    .trim();
+
+  if (plainText.length <= maxLength) {
+    return plainText;
+  }
+
+  return `${plainText.slice(0, maxLength).trimEnd()}...`;
+}
+
 // ========================================
 // GET - جلب المقالات
 // ========================================
@@ -95,7 +142,7 @@ export async function GET(request: NextRequest) {
     const authorId = searchParams.get("authorId");
     const limitNum = parseLimit(searchParams.get("limit"));
 
-    const user = await getCurrentUser();
+    const user = await getCurrentUser(request);
 
     const roles = user?.roles ?? [];
     const canReview = isEditorOrAdmin(roles);
@@ -195,7 +242,7 @@ export async function GET(request: NextRequest) {
 
 export async function POST(request: NextRequest) {
   try {
-    const user = await getCurrentUser();
+    const user = await getCurrentUser(request);
 
     if (!user) {
       return errorResponse(
@@ -312,9 +359,7 @@ export async function POST(request: NextRequest) {
     const docRef = await adminDb.collection("posts").add({
       title: title.trim(),
       content: sanitizedContent,
-      excerpt:
-        excerpt.trim() ||
-        sanitizedContent.substring(0, 150) + "...",
+      excerpt: excerpt.trim() || createExcerpt(sanitizedContent),
       category: category.trim(),
       tags: tags.map((tag: string) => tag.trim()),
       featuredImage: featuredImage.trim(),

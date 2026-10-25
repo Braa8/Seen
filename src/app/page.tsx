@@ -43,10 +43,7 @@ export default async function HomePage() {
              width={200}
              height={100} />
           </div>
-          <p className="text-xl md:text-2xl text-sky-200 mb-4">لأن الصحافة سؤال</p>
-          <p className="text-sky-300 mb-10 max-w-lg mx-auto">
-            منصة صحفية عربية تجمع الكتّاب والمحررين والقراء في فضاء واحد
-          </p>
+          <p className="text-xl md:text-2xl text-sky-100 mb-4">لأن الصحافة سؤال</p>
           <div className="flex gap-4 justify-center flex-wrap">
             <Link href="/Posts"
               className="px-8 py-3 bg-white text-sky-800 rounded-full font-bold hover:bg-sky-50 transition-all hover:scale-105 shadow-lg">
@@ -71,8 +68,7 @@ export default async function HomePage() {
 
         {posts.length === 0 ? (
           <div className="text-center py-20 text-slate-400">
-            <p className="text-2xl mb-2">لا توجد مقالات حتى الآن</p>
-            <p>كن أول من يكتب!</p>
+            <p className="text-2xl mb-2">لا توجد مقالات حتى الآن - تأكد من اتصالك بالشبكة</p>
           </div>
         ) : (
           <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-3 gap-8">
