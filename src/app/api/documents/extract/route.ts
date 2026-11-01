@@ -1,8 +1,8 @@
 import { NextRequest, NextResponse } from "next/server";
 import { getServerSession } from "next-auth";
 import mammoth from "mammoth";
+import { CanvasFactory } from "pdf-parse/worker";
 import { PDFParse } from "pdf-parse";
-
 import { authOptions } from "@/lib/authOptions";
 import { adminDb } from "@/lib/firebaseAdmin";
 
@@ -135,6 +135,7 @@ export async function POST(request: NextRequest) {
     } else {
       pdfParser = new PDFParse({
         data: bytes,
+        CanvasFactory,
       });
 
       const result = await pdfParser.getText();

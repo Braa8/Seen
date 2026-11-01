@@ -32,22 +32,31 @@ export default function EditorPage() {
   }, [filter]);
 
   async function updateStatus(postId: string, newStatus: string, reason?: string) {
-    setProcessing(true);
-    const res = await fetch(`/api/posts/${postId}`, {
-      method: "PUT",
-      headers: { "Content-Type": "application/json" },
-      body: JSON.stringify({ status: newStatus, rejectionReason: reason ?? "" }),
-    });
-    setProcessing(false);
-    if (res.ok) {
-      toast.success(newStatus === "published" ? "تم النشر بنجاح" : "تم الرفض");
-      setPosts((p) => p.filter((x) => x.id !== postId));
-      setSelectedPost(null);
-      setRejectionReason("");
-    } else {
-      toast.error("حدث خطأ");
-    }
+  setProcessing(true);
+
+  const payload = {
+    status: newStatus,
+    ...(newStatus === "rejected" ? { rejectionReason: reason ?? "" } : {}),
+  };
+
+  const res = await fetch(`/api/posts/${postId}`, {
+    method: "PUT",
+    headers: { "Content-Type": "application/json" },
+    body: JSON.stringify(payload),
+  });
+
+  setProcessing(false);
+
+  if (res.ok) {
+    toast.success(newStatus === "published" ? "تم النشر بنجاح" : "تم الرفض");
+    setPosts((p) => p.filter((x) => x.id !== postId));
+    setSelectedPost(null);
+    setRejectionReason("");
+  } else {
+    const data = await res.json().catch(() => null);
+    toast.error(data?.error ?? "حدث خطأ");
   }
+}
 
   const statusColor: Record<string, string> = { pending: "bg-yellow-100 text-yellow-700", published: "bg-green-100 text-green-700", draft: "bg-slate-100 text-slate-600", rejected: "bg-red-100 text-red-600" };
   const statusLabel: Record<string, string> = { pending: "قيد المراجعة", published: "منشور", draft: "مسودة", rejected: "مرفوض" };
