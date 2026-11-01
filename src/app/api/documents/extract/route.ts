@@ -1,8 +1,7 @@
 import { NextRequest, NextResponse } from "next/server";
 import { getServerSession } from "next-auth";
 import mammoth from "mammoth";
-import { CanvasFactory } from "pdf-parse/worker";
-import { PDFParse } from "pdf-parse";
+import { extractText, getDocumentProxy } from "unpdf";
 import { authOptions } from "@/lib/authOptions";
 import { adminDb } from "@/lib/firebaseAdmin";
 
@@ -35,8 +34,6 @@ async function canExtractDocuments(userId: string): Promise<boolean> {
 }
 
 export async function POST(request: NextRequest) {
-  let pdfParser: PDFParse | null = null;
-
   try {
     // 1. التحقق من تسجيل الدخول
     const session = await getServerSession(authOptions);
@@ -133,12 +130,11 @@ export async function POST(request: NextRequest) {
 
       extractedText = result.value;
     } else {
-      pdfParser = new PDFParse({
-        data: bytes,
-        CanvasFactory,
-      });
+      const pdf = await getDocumentProxy(bytes);
 
-      const result = await pdfParser.getText();
+      const result = await extractText(pdf, {
+        mergePages: true,
+      });
 
       extractedText = result.text;
     }
@@ -181,13 +177,5 @@ export async function POST(request: NextRequest) {
       },
       { status: 500 },
     );
-  } finally {
-    if (pdfParser) {
-      try {
-        await pdfParser.destroy();
-      } catch (error) {
-        console.error("PDF parser cleanup error:", error);
-      }
-    }
   }
 }
