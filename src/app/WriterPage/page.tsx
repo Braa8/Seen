@@ -471,43 +471,6 @@ export default function WriterPage() {
     }
   }
 
-  async function handleDelete(postId: string) {
-    if (!window.confirm("هل تريد حذف هذا المقال؟")) {
-      return;
-    }
-
-    try {
-      const response = await fetch(
-        `/api/posts/${postId}`,
-        {
-          method: "DELETE",
-        }
-      );
-
-      if (!response.ok) {
-        const data =
-          (await response.json()) as {
-            error?: string;
-          };
-
-        throw new Error(
-          data.error || "تعذر حذف المقال"
-        );
-      }
-
-      setPosts((current) =>
-        current.filter((post) => post.id !== postId)
-      );
-
-      toast.success("تم حذف المقال");
-    } catch (error) {
-      toast.error(
-        error instanceof Error
-          ? error.message
-          : "حدث خطأ أثناء حذف المقال"
-      );
-    }
-  }
 
   const statusLabel: Record<string, string> = {
     draft: "مسودة",
@@ -950,13 +913,6 @@ export default function WriterPage() {
                     </button>
                   )}
 
-                  <button
-                    type="button"
-                    onClick={() => handleDelete(post.id)}
-                    className="px-3 py-1.5 text-sm bg-red-50 text-red-600 rounded-lg hover:bg-red-100 transition"
-                  >
-                    حذف
-                  </button>
                 </div>
               </article>
             ))}
